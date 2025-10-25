@@ -79,7 +79,7 @@ class Message(Base):
     role = Column(String(20), nullable=False)  # 'user', 'assistant', 'system'
     content = Column(Text, nullable=False)
     artifact_ids = Column(ARRAY(Integer))  # Array of artifact IDs if any generated
-    metadata = Column(JSON)  # Visualization configs, entities, confidence, etc.
+    extra_metadata = Column(JSON)  # Visualization configs, entities, confidence, etc.
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -92,6 +92,6 @@ class Message(Base):
             "conversation_id": self.conversation_id,
             "role": self.role,
             "content": self.content,
-            "metadata": self.metadata,
+            "metadata": self.extra_metadata,
             "created_at": self.created_at.isoformat()
         }

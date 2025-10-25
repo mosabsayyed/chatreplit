@@ -132,7 +132,7 @@ class ConversationManager:
             conversation_id=conversation_id,
             role=role,
             content=content,
-            metadata=metadata or {},
+            extra_metadata=metadata or {},
             created_at=datetime.utcnow()
         )
         
@@ -232,10 +232,10 @@ class ConversationManager:
                 continue
             
             # Check if metadata contains relevant entities
-            if not msg.metadata:
+            if not msg.extra_metadata:
                 continue
             
-            metadata = msg.metadata
+            metadata = msg.extra_metadata
             
             # Check for entity overlap
             msg_entities = []

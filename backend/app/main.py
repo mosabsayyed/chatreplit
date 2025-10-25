@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.api.v1 import agent, health
+from app.api.routes import chat
 from app.db.postgres_client import postgres_client
 import os
 
@@ -22,6 +23,7 @@ app.add_middleware(
 
 app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend")
 if os.path.exists(frontend_dir):
