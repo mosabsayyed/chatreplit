@@ -19,7 +19,7 @@ class ChatResponse(BaseModel):
     conversation_id: int
     message: str
     visualization: Optional[dict] = None
-    insights: List[dict] = []
+    insights: List[str] = []  # Changed from List[dict] to List[str]
 
 
 class ConversationSummary(BaseModel):
@@ -63,6 +63,8 @@ async def send_message(
     5. Returns response with conversation_id
     """
     
+    from starlette.concurrency import run_in_threadpool
+    
     conversation_manager = ConversationManager(db)
     
     # For MVP: Use demo user (id=1)
@@ -70,60 +72,82 @@ async def send_message(
     user_id = 1
     
     try:
+        # CRITICAL FIX: Run synchronous SQLAlchemy in threadpool to avoid blocking event loop
+        
         # Get or create conversation
         if request.conversation_id:
             # Verify conversation exists and belongs to user
-            conversation = conversation_manager.get_conversation(
-                conversation_id=request.conversation_id,
-                user_id=user_id
+            conversation = await run_in_threadpool(
+                conversation_manager.get_conversation,
+                request.conversation_id,
+                user_id
             )
             if not conversation:
                 raise HTTPException(status_code=404, detail="Conversation not found")
             conversation_id = request.conversation_id
         else:
             # Create new conversation
-            conversation = conversation_manager.create_conversation(
-                user_id=user_id,
-                persona_name=request.persona,
-                title=request.query[:50] + ("..." if len(request.query) > 50 else "")
+            conversation = await run_in_threadpool(
+                conversation_manager.create_conversation,
+                user_id,
+                request.persona,
+                request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
             conversation_id = conversation.id
         
         # Store user message
-        conversation_manager.add_message(
-            conversation_id=conversation_id,
-            role="user",
-            content=request.query,
-            metadata={"persona": request.persona}
+        await run_in_threadpool(
+            conversation_manager.add_message,
+            conversation_id,
+            "user",
+            request.query,
+            {"persona": request.persona}
         )
         
-        # Build conversation context for agent
-        conversation_context = conversation_manager.build_conversation_context(
-            conversation_id=conversation_id,
-            max_messages=10
+        # Build conversation context for agent (THE MAGIC!)
+        conversation_context = await run_in_threadpool(
+            conversation_manager.build_conversation_context,
+            conversation_id,
+            10
         )
         
-        # TODO: Process through 4-layer autonomous agent
-        # For now, return mock response to test conversation flow
-        response_text = f"[AGENT RESPONSE] Analyzing: {request.query}\n\nContext:\n{conversation_context}"
+        # Import and initialize autonomous agent
+        from app.services.autonomous_agent import autonomous_agent
         
-        # Store agent response
-        conversation_manager.add_message(
-            conversation_id=conversation_id,
-            role="assistant",
-            content=response_text,
-            metadata={
-                "visualization": None,
-                "insights": [],
-                "entities": []
+        # Process through 4-layer autonomous agent WITH CONTEXT
+        agent_response = await autonomous_agent.process_query(
+            question=request.query,
+            context={"conversation_history": conversation_context}
+        )
+        
+        # CRITICAL FIX: Guard against None/empty visualizations
+        visualizations_data = []
+        if agent_response.visualizations:
+            visualizations_data = [v.model_dump() for v in agent_response.visualizations]
+        
+        # Store agent response with rich metadata
+        await run_in_threadpool(
+            conversation_manager.add_message,
+            conversation_id,
+            "assistant",
+            agent_response.narrative,
+            {
+                "visualizations": visualizations_data,
+                "insights": agent_response.metadata.get("key_insights", []),
+                "chain_selected": agent_response.metadata.get("chain_selected"),
+                "suggestions": agent_response.metadata.get("suggestions", []),
+                "confidence": {
+                    "level": agent_response.confidence.level,
+                    "score": agent_response.confidence.score
+                }
             }
         )
         
         return ChatResponse(
             conversation_id=conversation_id,
-            message=response_text,
-            visualization=None,
-            insights=[]
+            message=agent_response.narrative,
+            visualization={"visualizations": visualizations_data} if visualizations_data else None,
+            insights=agent_response.metadata.get("key_insights", [])
         )
     
     except Exception as e:

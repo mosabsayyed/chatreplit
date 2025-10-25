@@ -17,20 +17,31 @@ class IntentUnderstandingMemory:
     """Layer 1: Extract intent from user query"""
     
     async def process(self, question: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Analyze question and extract intent, entities, time period"""
+        """Analyze question and extract intent, entities, time period WITH CONVERSATION MEMORY"""
         
-        system_prompt = """You are analyzing questions for JOSOOR - an enterprise transformation analytics platform.
+        # Get conversation history if available
+        conversation_history = ""
+        if context and "conversation_history" in context:
+            conversation_history = f"\n\nCONVERSATION HISTORY:\n{context['conversation_history']}"
+        
+        system_prompt = f"""You are analyzing questions for JOSOOR - an enterprise transformation analytics platform.
 
 CONTEXT:
 - Domain: Water sector transformation, sustainability, environmental compliance, organizational capability building
 - Entity types: Projects (transformation initiatives), Capabilities (organizational skills), IT Systems, Processes, Strategic Objectives
-- Data structure: Hierarchical (L1, L2, L3 levels), temporal (2024-2028), with relationships
+- Data structure: Hierarchical (L1, L2, L3 levels), temporal (2024-2028), with relationships{conversation_history}
+
+CONVERSATION MEMORY:
+- Use the conversation history above to understand references like "it", "that", "them", "previous"
+- If the user says "compare it", look for what was analyzed in previous messages
+- Resolve pronouns and references based on conversation context
 
 Extract from the user question:
 1. intent_type: "dashboard_view", "drill_down", "comparison", "trend_analysis", "general_question"
 2. entities: List of entities (e.g., ["ent_projects", "ent_capabilities", "sec_objectives"])
-3. time_period: {"year": int (default 2024 if not specified), "quarter": int or null}
+3. time_period: {{"year": int (default 2024 if not specified), "quarter": int or null}}
 4. analysis_type: "descriptive", "diagnostic", "predictive", "prescriptive"
+5. resolved_references: If question has "it", "that", etc., what do they refer to based on history?
 
 Respond in JSON format only."""
         

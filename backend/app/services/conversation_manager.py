@@ -158,16 +158,25 @@ class ConversationManager:
         self,
         conversation_id: int,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        order_desc: bool = False
     ) -> List[Message]:
         """
-        Get messages for a conversation (chronological order)
+        Get messages for a conversation
+        
+        Args:
+            order_desc: If True, get most recent messages first (for context building)
         """
-        return self.db.query(Message).filter(
+        query = self.db.query(Message).filter(
             Message.conversation_id == conversation_id
-        ).order_by(
-            Message.created_at
-        ).limit(limit).offset(offset).all()
+        )
+        
+        if order_desc:
+            query = query.order_by(desc(Message.created_at))
+        else:
+            query = query.order_by(Message.created_at)
+        
+        return query.limit(limit).offset(offset).all()
     
     # ==================== CONTEXT BUILDING (THE MAGIC) ====================
     
@@ -177,7 +186,7 @@ class ConversationManager:
         max_messages: int = 10
     ) -> str:
         """
-        Build context summary from recent messages
+        Build context summary from MOST RECENT messages
         
         THIS IS WHAT THE AGENT NEEDS - Returns formatted string with conversation history
         
@@ -191,10 +200,14 @@ class ConversationManager:
              Assistant: Education sector health is 75/100...
              User: Compare it with healthcare"
         """
-        messages = self.get_messages(conversation_id, limit=max_messages)
+        # CRITICAL FIX: Get most recent messages (desc order) then reverse to chronological
+        messages = self.get_messages(conversation_id, limit=max_messages, order_desc=True)
         
         if not messages:
             return "No previous conversation history."
+        
+        # Reverse to chronological order (oldest first)
+        messages = list(reversed(messages))
         
         context_lines = []
         for msg in messages:
