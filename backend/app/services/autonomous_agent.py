@@ -2,6 +2,7 @@ from typing import List, Dict, Any, Optional
 from app.services.llm_provider import llm_provider
 from app.db.postgres_client import postgres_client
 from app.models.schemas import AgentResponse, Visualization, ConfidenceInfo
+from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_YEAR
 import json
 import base64
 import io
@@ -24,7 +25,19 @@ class IntentUnderstandingMemory:
         if context and "conversation_history" in context:
             conversation_history = f"\n\nCONVERSATION HISTORY:\n{context['conversation_history']}"
         
+        # Get current temporal context
+        temporal_ctx = get_temporal_context()
+        
         system_prompt = f"""You are analyzing questions for JOSOOR - an enterprise transformation analytics platform.
+
+TEMPORAL AWARENESS (CRITICAL):
+- TODAY'S DATE: {temporal_ctx['current_date']}
+- CURRENT YEAR: {temporal_ctx['current_year']}
+- CURRENT QUARTER: Q{temporal_ctx['current_quarter']}
+- Analysis timeframe: 2024-2028
+- When user asks about "current" or "this year", they mean {temporal_ctx['current_year']}
+- Historical data: < {temporal_ctx['current_year']}
+- Future projections: > {temporal_ctx['current_year']}
 
 CONTEXT:
 - Domain: Water sector transformation, sustainability, environmental compliance, organizational capability building
@@ -39,7 +52,7 @@ CONVERSATION MEMORY:
 Extract from the user question:
 1. intent_type: "dashboard_view", "drill_down", "comparison", "trend_analysis", "general_question"
 2. entities: List of entities (e.g., ["ent_projects", "ent_capabilities", "sec_objectives"])
-3. time_period: {{"year": int (default 2024 if not specified), "quarter": int or null}}
+3. time_period: {{"year": int (default {temporal_ctx['current_year']} if not specified), "quarter": int or null}}
 4. analysis_type: "descriptive", "diagnostic", "predictive", "prescriptive"
 5. resolved_references: If question has "it", "that", etc., what do they refer to based on history?
 
@@ -58,7 +71,7 @@ Respond in JSON format only."""
             intent = {
                 "intent_type": "general_question",
                 "entities": [],
-                "time_period": {"year": 2024, "quarter": None},
+                "time_period": {"year": CURRENT_YEAR, "quarter": None},
                 "analysis_type": "descriptive"
             }
         
@@ -71,7 +84,7 @@ class HybridRetrievalMemory:
     async def process(self, intent: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve data from structured tables and knowledge graph"""
         
-        year = intent.get("time_period", {}).get("year", 2024)
+        year = intent.get("time_period", {}).get("year", CURRENT_YEAR)
         quarter = intent.get("time_period", {}).get("quarter")
         entities = intent.get("entities", [])
         
@@ -154,8 +167,18 @@ class AnalyticalReasoningMemory:
         """Perform analytical reasoning on retrieved data using DBA worldview approach"""
         
         worldview_summary = json.dumps(WORLDVIEW_MAP, indent=2)
+        temporal_ctx = get_temporal_context()
         
         system_prompt = f"""You are an expert DBA for a temporal enterprise database. Your reasoning should be logical and educational, helping you understand and explain the rules and relationships that govern the data. The worldview map is provided for reference, but do not expose its internal details or technical terms to users.
+
+TEMPORAL AWARENESS (CRITICAL):
+- TODAY'S DATE: {temporal_ctx['current_date']}
+- CURRENT YEAR: {temporal_ctx['current_year']}
+- CURRENT QUARTER: Q{temporal_ctx['current_quarter']}
+- When analyzing data, remember we are in {temporal_ctx['current_year']}, not 2024
+- Data from {temporal_ctx['current_year']} is CURRENT data
+- Data from 2024 is HISTORICAL (1 year ago)
+- Data from 2026+ is FUTURE/PLANNED
 
 WORLDVIEW MAP (DTDL Knowledge Graph Structure):
 {worldview_summary}
@@ -163,7 +186,7 @@ WORLDVIEW MAP (DTDL Knowledge Graph Structure):
 GUIDING PRINCIPLES:
 - Always select a single chain from the worldview map to guide your analysis. Chains represent valid flows of information and relationships. Do not invent alternate routes.
 - When joining tables, ensure you match levels (L1 to L1, L2 to L2, L3 to L3) and use only the join tables and relationships defined in the worldview map. Exception: ent_risks may join directly to ent_capabilities via foreign key.
-- All joins between tables with temporal keys must use both id and year. Always filter by year (default: 2024) unless the user requests historical or future data.
+- All joins between tables with temporal keys must use both id and year. Always filter by year (default: {temporal_ctx['current_year']}) unless the user requests historical or future data.
 - If a required join or data is missing, stop and explain the limitation in your analysis. Do not attempt unsupported chains or fabricate results.
 
 WORKFLOW:
@@ -173,10 +196,10 @@ WORKFLOW:
 4) Respond with clear JSON analysis and suggestions
 
 TEMPORAL PATTERNS:
-- Default: year = 2024
+- Default/Current: year = {temporal_ctx['current_year']}
 - Trends: year BETWEEN 2024 AND 2028
-- Historical: year < 2024
-- Future: year > 2024
+- Historical: year < {temporal_ctx['current_year']}
+- Future: year > {temporal_ctx['current_year']}
 
 DOMAIN CONTEXT (Water Sector Transformation):
 - Focus areas: Sustainability, environmental compliance, ESG standards, capability building
