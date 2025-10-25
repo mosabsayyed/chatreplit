@@ -1,0 +1,24 @@
+from pydantic_settings import BaseSettings
+from typing import Optional
+import os
+
+class Settings(BaseSettings):
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    PGHOST: str = os.getenv("PGHOST", "localhost")
+    PGPORT: int = int(os.getenv("PGPORT", "5432"))
+    PGUSER: str = os.getenv("PGUSER", "postgres")
+    PGPASSWORD: str = os.getenv("PGPASSWORD", "")
+    PGDATABASE: str = os.getenv("PGDATABASE", "postgres")
+    
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    OPENAI_BASE_URL: Optional[str] = os.getenv("OPENAI_BASE_URL")
+    
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "replit")
+    
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+settings = Settings()
