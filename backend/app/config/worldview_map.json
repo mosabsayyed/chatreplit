@@ -1,0 +1,472 @@
+{
+  "meta": {
+    "version": "1.0",
+    "temporal_key": [
+      "id",
+      "year"
+    ],
+    "levels": [
+      "L1",
+      "L2",
+      "L3"
+    ],
+    "notes": "Send this block in every prompt as the 'world-view map'."
+  },
+  "rules": {
+    "lock_route_step1": true,
+    "no_alternates": true,
+    "level_match_only": true,
+    "use_jt_only": true,
+    "ask_step2_for_details": true,
+    "risk_fk_exception": {
+      "from": "ent_risks",
+      "to": "ent_capabilities",
+      "keys": [
+        "capability_id",
+        "year"
+      ]
+    }
+  },
+  "nodes": {
+    "sec_objectives": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Strategic Goals",
+        "L2": "Cascaded Departmental Goals",
+        "L3": "Cascaded Process-Level Performance Parameters"
+      },
+      "name": "Objectives"
+    },
+    "sec_policy_tools": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Types (e.g., Public Services, Regulations)",
+        "L2": "Individual Tool Name",
+        "L3": "Targeted Impact of the Tool"
+      },
+      "name": "Policy Tools"
+    },
+    "sec_admin_records": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Reference Admin Record (published guiding principles)",
+        "L2": "Data Categories (licenses, production)",
+        "L3": "Individual Datasets (tarrifs, fees, violations etc..)"
+      },
+      "name": "Admin Records"
+    },
+    "sec_businesses": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Size (Strategic, Large, SME)",
+        "L2": "Domain (economy, regulations, operations…)",
+        "L3": "Specific topic"
+      },
+      "name": "Businesses"
+    },
+    "sec_citizens": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Type (Beneficiary, Consumer)",
+        "L2": "Region (geographical presence)",
+        "L3": "Districts"
+      },
+      "name": "Citizen"
+    },
+    "sec_gov_entities": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Type (center of government, policy entities, execution entities)",
+        "L2": "Domain (economy, regulations, operations…)",
+        "L3": "Specific topic"
+      },
+      "name": "Gov. Entities"
+    },
+    "sec_data_transactions": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Domain Utilization (aggregate of productivity)",
+        "L2": "Department Productivity (aggregate of metrics)",
+        "L3": "Transactional metrics"
+      },
+      "name": "Data Transaction"
+    },
+    "sec_performance": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Strategic KPIs",
+        "L2": "Operational KPIs",
+        "L3": "Transactional Metrics"
+      },
+      "name": "Performance"
+    },
+    "ent_capabilities": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Business Domains",
+        "L2": "Functional Knowledge",
+        "L3": "Specific Competencies"
+      },
+      "name": "Capability"
+    },
+    "ent_risks": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Risk Categories (e.g., Financial, Technical)",
+        "L2": "Specific Risk Name (e.g., 'Budget Overrun')"
+      },
+      "name": "Risks",
+      "fk_to": {
+        "table": "ent_capabilities",
+        "keys": [
+          "capability_id",
+          "year"
+        ]
+      },
+      "risk_escalation_field": "risk_score"
+    },
+    "ent_org_units": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Departments",
+        "L2": "Sub-Departments",
+        "L3": "Teams"
+      },
+      "name": "Organization"
+    },
+    "ent_processes": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Process Categories",
+        "L2": "Process Groups",
+        "L3": "Clusters of individual processes"
+      },
+      "name": "Processes"
+    },
+    "ent_it_systems": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Main Platforms",
+        "L2": "System Modules",
+        "L3": "Module Features"
+      },
+      "name": "IT Systems"
+    },
+    "ent_projects": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Programs or Portfolios",
+        "L2": "Initiatives that deliver specific outcomes",
+        "L3": "Primary output delivered from a project"
+      },
+      "name": "Projects"
+    },
+    "ent_change_adoption": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Change Domain (shift in business focus)",
+        "L2": "Change Area (shift in functional knowledge)",
+        "L3": "Change Behavior (shift observed by team members)"
+      },
+      "name": "Change Adoption"
+    },
+    "ent_culture_health": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "OHI (Dept)",
+        "L2": "OHI (Sub-Dept)",
+        "L3": "OHI (Team)"
+      },
+      "name": "Culture Health"
+    },
+    "ent_vendors": {
+      "key": [
+        "id",
+        "year"
+      ],
+      "levels": {
+        "L1": "Main Partners",
+        "L2": "Service Domains",
+        "L3": "Individual Services"
+      },
+      "name": "Vendors"
+    }
+  },
+  "edges": [
+    [
+      "sec_objectives",
+      "jt_sec_objectives_sec_policy_tools_join",
+      "sec_policy_tools",
+      "Lmatch",
+      "Realized Via"
+    ],
+    [
+      "sec_policy_tools",
+      "jt_sec_policy_tools_sec_admin_records_join",
+      "sec_admin_records",
+      "Lmatch",
+      "Refers To"
+    ],
+    [
+      "sec_admin_records",
+      "jt_sec_admin_records_sec_businesses_join",
+      "sec_businesses",
+      "Lmatch",
+      "Applied On"
+    ],
+    [
+      "sec_admin_records",
+      "jt_sec_admin_records_sec_citizens_join",
+      "sec_citizens",
+      "Lmatch",
+      "Applied On"
+    ],
+    [
+      "sec_admin_records",
+      "jt_sec_admin_records_sec_gov_entities_join",
+      "sec_gov_entities",
+      "Lmatch",
+      "Applied On"
+    ],
+    [
+      "sec_businesses",
+      "jt_sec_businesses_sec_data_transactions_join",
+      "sec_data_transactions",
+      "Lmatch",
+      "Triggers Event"
+    ],
+    [
+      "sec_citizens",
+      "jt_sec_citizens_sec_data_transactions_join",
+      "sec_data_transactions",
+      "Lmatch",
+      "Triggers Event"
+    ],
+    [
+      "sec_gov_entities",
+      "jt_sec_gov_entities_sec_data_transactions_join",
+      "sec_data_transactions",
+      "Lmatch",
+      "Triggers Event"
+    ],
+    [
+      "sec_data_transactions",
+      "jt_sec_data_transactions_sec_performance_join",
+      "sec_performance",
+      "Lmatch",
+      "Drives"
+    ],
+    [
+      "sec_objectives",
+      "jt_sec_objectives_sec_performance_join",
+      "sec_performance",
+      "Lmatch",
+      "Cascaded Via"
+    ],
+    [
+      "sec_policy_tools",
+      "jt_sec_policy_tools_ent_capabilities_join",
+      "ent_capabilities",
+      "Lmatch",
+      "Priority Areas"
+    ],
+    [
+      "sec_performance",
+      "jt_sec_performance_ent_capabilities_join",
+      "ent_capabilities",
+      "Lmatch",
+      "Operational Targets"
+    ],
+    [
+      "ent_capabilities",
+      "FK",
+      "ent_risks",
+      "Lmatch",
+      "Is Monitored By (Direct FK)"
+    ],
+    [
+      "ent_org_units",
+      "jt_ent_org_units_ent_culture_health_join",
+      "ent_culture_health",
+      "Lmatch",
+      "Impacts"
+    ],
+    [
+      "ent_org_units",
+      "jt_ent_org_units_ent_processes_join",
+      "ent_processes",
+      "Lmatch",
+      "Owns"
+    ],
+    [
+      "ent_processes",
+      "jt_ent_processes_ent_it_systems_join",
+      "ent_it_systems",
+      "Lmatch",
+      "Automated Via"
+    ],
+    [
+      "ent_it_systems",
+      "jt_ent_it_systems_ent_vendors_join",
+      "ent_vendors",
+      "Lmatch",
+      "Supplied By"
+    ],
+    [
+      "ent_projects",
+      "jt_ent_projects_ent_change_adoption_join",
+      "ent_change_adoption",
+      "Lmatch",
+      "Adoption Risks"
+    ],
+    [
+      "ent_projects",
+      "jt_ent_projects_ent_org_units_join",
+      "ent_org_units",
+      "Lmatch",
+      "Gaps Scope"
+    ]
+  ],
+  "chains": {
+    "1_SectorOps": {
+      "nodes": [
+        "sec_objectives",
+        "sec_policy_tools",
+        "sec_admin_records",
+        "(stakeholders)",
+        "sec_data_transactions",
+        "sec_performance",
+        "sec_objectives"
+      ],
+      "description": "External execution flow: Objectives -> Policy Tools -> Stakeholders -> Performance -> Objectives."
+    },
+    "2A_Strategy_to_Tactics_Tools": {
+      "nodes": [
+        "sec_objectives",
+        "sec_policy_tools",
+        "ent_capabilities",
+        "(org|process|it)_gaps",
+        "ent_projects",
+        "ent_change_adoption"
+      ],
+      "description": "Top-down planning: Objectives -> Capabilities -> Gaps -> Projects."
+    },
+    "2B_Strategy_to_Tactics_Perf": {
+      "nodes": [
+        "sec_objectives",
+        "sec_performance",
+        "ent_capabilities",
+        "(org|process|it)_gaps",
+        "ent_projects",
+        "ent_change_adoption"
+      ],
+      "description": "Top-down planning: Objectives -> Capabilities -> Gaps -> Projects."
+    },
+    "3_Tactical_to_Strategy": {
+      "nodes": [
+        "ent_change_adoption",
+        "ent_projects",
+        "(org|process|it)",
+        "ent_capabilities",
+        "(sec_performance|sec_policy_tools)",
+        "sec_objectives"
+      ],
+      "description": "Bottom-up execution feedback: Projects -> Close Gaps -> Capabilities -> Performance/Policy -> Objectives."
+    },
+    "4_Risk_Build": {
+      "nodes": [
+        "(operational_status)",
+        "ent_capabilities",
+        "ent_risks",
+        "sec_policy_tools"
+      ],
+      "description": "Outward risk impact: Capability -> Risk -> Policy (Build) or Performance (Execution)."
+    },
+    "4_Risk_Execute": {
+      "nodes": [
+        "(operational_status)",
+        "ent_capabilities",
+        "ent_risks",
+        "sec_performance"
+      ],
+      "description": "Outward risk impact: Capability -> Risk -> Policy (Build) or Performance (Execution)."
+    },
+    "5_Internal_Efficiency": {
+      "nodes": [
+        "ent_culture_health",
+        "ent_org_units",
+        "ent_processes",
+        "ent_it_systems",
+        "ent_vendors"
+      ],
+      "description": "Internal efficiency flow: Culture -> Org -> Process -> IT -> Vendors."
+    }
+  },
+  "validation": {
+    "require_join_tables": true,
+    "missing_join": "UNSUPPORTED_CHAIN_STOP",
+    "empty_join": "DATA_POPULATION_ERROR_STOP",
+    "year_filter_required": true,
+    "level_match_required": true
+  },
+  "step_protocol": {
+    "1_plan": "choose_chain_and_expected_joins_lock",
+    "2_details": "request_columns_pks_fks_for_minimal_tables",
+    "3_sql": "output_sql_with_explicit_columns_and_id_year_joins",
+    "4_analyze": "analyze_results; if empty due to missing/empty join, stop and report"
+  },
+  "constraints": [
+    "Chain Adherence: Only join nodes as defined in 'edges'.",
+    "Level Matching: Joins must respect the 'levels' defined for each edge.",
+    "Year Consistency: All joins between ent_ and sec_ tables must include 'ON a.year = b.year'.",
+    "Composite Keys: Joins on tables with (id, year) primary keys must use both columns."
+  ]
+}

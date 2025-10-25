@@ -6,6 +6,12 @@ import json
 import base64
 import io
 from datetime import datetime
+from pathlib import Path
+
+# Load worldview map (DTDL knowledge graph structure)
+WORLDVIEW_MAP_PATH = Path(__file__).parent.parent / "config" / "worldview_map.json"
+with open(WORLDVIEW_MAP_PATH, 'r') as f:
+    WORLDVIEW_MAP = json.load(f)
 
 class IntentUnderstandingMemory:
     """Layer 1: Extract intent from user query"""
@@ -134,39 +140,57 @@ class AnalyticalReasoningMemory:
         retrieved_data: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Perform analytical reasoning on retrieved data"""
+        """Perform analytical reasoning on retrieved data using DBA worldview approach"""
         
-        system_prompt = """You are an expert enterprise transformation analyst for JOSOOR - a water sector transformation intelligence platform.
+        worldview_summary = json.dumps(WORLDVIEW_MAP, indent=2)
+        
+        system_prompt = f"""You are an expert DBA for a temporal enterprise database. Your reasoning should be logical and educational, helping you understand and explain the rules and relationships that govern the data. The worldview map is provided for reference, but do not expose its internal details or technical terms to users.
 
-DOMAIN CONTEXT:
-- Water sector organizations undergoing digital transformation
-- Focus areas: Sustainability, environmental compliance, ESG standards, capability building, organizational change
-- Key initiatives: Digital platforms for monitoring, environmental standards implementation, service delivery optimization
-- Hierarchical structure: Projects and capabilities organized in L1 (strategic), L2 (tactical), L3 (operational) levels
-- Temporal tracking: Projects run from 2024-2028 with progress tracking
+WORLDVIEW MAP (DTDL Knowledge Graph Structure):
+{worldview_summary}
 
-DATA STRUCTURE:
-- Projects: Transformation initiatives with hierarchical IDs (e.g., "1.0", "2.1.3"), progress %, budget, status
-- Capabilities: Organizational skills with maturity levels (1-5 scale), L1/L2/L3 hierarchy
-- IT Systems: Technology infrastructure supporting transformation  
-- Strategic Objectives: High-level goals linked to performance metrics
-- Knowledge Graph: Rich relationships between entities (projects → change adoption, capabilities → processes, etc.)
+GUIDING PRINCIPLES:
+- Always select a single chain from the worldview map to guide your analysis. Chains represent valid flows of information and relationships. Do not invent alternate routes.
+- When joining tables, ensure you match levels (L1 to L1, L2 to L2, L3 to L3) and use only the join tables and relationships defined in the worldview map. Exception: ent_risks may join directly to ent_capabilities via foreign key.
+- All joins between tables with temporal keys must use both id and year. Always filter by year (default: 2024) unless the user requests historical or future data.
+- If a required join or data is missing, stop and explain the limitation in your analysis. Do not attempt unsupported chains or fabricate results.
 
-INSTRUCTIONS:
-1. Interpret data in the context of water sector transformation and sustainability
-2. Recognize hierarchical relationships (parent/child in ID structure)
-3. When you see knowledge_graph_nodes/relationships, use them to provide deeper insights about connections
-4. Focus on actionable insights: what's working, what needs attention, strategic recommendations
-5. Be specific with numbers, names, and statuses from the actual data
-6. DON'T make up data - only use what's provided
+WORKFLOW:
+1) Announce your chosen chain and reasoning
+2) Analyze the retrieved data using the chain relationships
+3) Generate insights based on the worldview connections
+4) Respond with clear JSON analysis and suggestions
 
-Provide:
-1. narrative: Clear, professional analysis (2-3 paragraphs) answering the question directly with specific data points
-2. key_insights: List of 3-5 concrete insights with evidence from data
-3. recommended_visualizations: Chart types that would best show this data
-4. data_quality_warnings: Any gaps or issues in the data
+TEMPORAL PATTERNS:
+- Default: year = 2024
+- Trends: year BETWEEN 2024 AND 2028
+- Historical: year < 2024
+- Future: year > 2024
 
-Respond in JSON format."""
+DOMAIN CONTEXT (Water Sector Transformation):
+- Focus areas: Sustainability, environmental compliance, ESG standards, capability building
+- Hierarchical structure: L1 (strategic), L2 (tactical), L3 (operational)
+- Key entities: Projects (transformation initiatives), Capabilities (organizational skills), IT Systems, Strategic Objectives
+- Knowledge Graph: 34,409 nodes and 42,084 relationships representing DTDL digital twin architecture
+
+RESPONSE PROTOCOL:
+Return valid JSON only:
+{{
+  "chain_selected": "name of chain from worldview map (e.g., '2A_Strategy_to_Tactics_Tools')",
+  "chain_reasoning": "why this chain was chosen",
+  "narrative": "Clear, professional analysis (2-3 paragraphs) using specific data points and chain relationships",
+  "key_insights": ["insight 1 with evidence", "insight 2 with evidence", "insight 3 with evidence"],
+  "recommended_visualizations": ["chart_type1", "chart_type2"],
+  "data_quality_warnings": ["warning if applicable"],
+  "suggestions": ["actionable recommendation 1", "actionable recommendation 2"]
+}}
+
+EDUCATIONAL APPROACH:
+- Always explain your reasoning, sources, and logic in the narrative
+- Help the user understand how you arrived at your answer using the chain relationships
+- Be specific with numbers, names, and statuses from actual data
+- DON'T make up data - only use what's provided
+- Never mention internal worldview rules or technical constraints to users"""
         
         data_summary = json.dumps(retrieved_data, default=str, indent=2)[:3000]
         
@@ -182,16 +206,27 @@ Data Retrieved:
 Analyze and respond in JSON format."""}
         ]
         
-        response = await llm_provider.chat_completion(messages, temperature=0.5, max_tokens=1500)
+        response = await llm_provider.chat_completion(messages, temperature=0.3, max_tokens=2500)
         
         try:
             analysis = json.loads(response)
+            # Ensure all expected fields exist
+            if "chain_selected" not in analysis:
+                analysis["chain_selected"] = "Unknown"
+            if "chain_reasoning" not in analysis:
+                analysis["chain_reasoning"] = "Chain not specified"
+            if "suggestions" not in analysis:
+                analysis["suggestions"] = []
         except:
+            # Fallback if JSON parsing fails
             analysis = {
+                "chain_selected": "Unknown",
+                "chain_reasoning": "Unable to parse chain information",
                 "narrative": response,
                 "key_insights": ["Analysis completed based on available data"],
                 "recommended_visualizations": ["bar"],
-                "data_quality_warnings": []
+                "data_quality_warnings": [],
+                "suggestions": []
             }
         
         return analysis
@@ -292,6 +327,10 @@ class AutonomousAnalyticalAgent:
                 metadata={
                     "intent": intent,
                     "data_sources": list(retrieved_data.keys()),
+                    "chain_selected": analysis.get("chain_selected", "Unknown"),
+                    "chain_reasoning": analysis.get("chain_reasoning", "Not specified"),
+                    "suggestions": analysis.get("suggestions", []),
+                    "key_insights": analysis.get("key_insights", []),
                     "timestamp": datetime.now().isoformat()
                 }
             )
