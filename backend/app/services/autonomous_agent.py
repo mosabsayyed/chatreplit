@@ -13,11 +13,17 @@ class IntentUnderstandingMemory:
     async def process(self, question: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Analyze question and extract intent, entities, time period"""
         
-        system_prompt = """You are an intent understanding system for JOSOOR transformation analytics.
-Extract the following from the user question:
+        system_prompt = """You are analyzing questions for JOSOOR - an enterprise transformation analytics platform.
+
+CONTEXT:
+- Domain: Water sector transformation, sustainability, environmental compliance, organizational capability building
+- Entity types: Projects (transformation initiatives), Capabilities (organizational skills), IT Systems, Processes, Strategic Objectives
+- Data structure: Hierarchical (L1, L2, L3 levels), temporal (2024-2028), with relationships
+
+Extract from the user question:
 1. intent_type: "dashboard_view", "drill_down", "comparison", "trend_analysis", "general_question"
-2. entities: List of entities mentioned (e.g., ["ent_projects", "sec_objectives"])
-3. time_period: {"year": int, "quarter": str or null}
+2. entities: List of entities (e.g., ["ent_projects", "ent_capabilities", "sec_objectives"])
+3. time_period: {"year": int (default 2024 if not specified), "quarter": int or null}
 4. analysis_type: "descriptive", "diagnostic", "predictive", "prescriptive"
 
 Respond in JSON format only."""
@@ -130,14 +136,35 @@ class AnalyticalReasoningMemory:
     ) -> Dict[str, Any]:
         """Perform analytical reasoning on retrieved data"""
         
-        system_prompt = """You are an expert enterprise transformation analyst for JOSOOR.
-Analyze the provided data and generate insights to answer the user's question.
+        system_prompt = """You are an expert enterprise transformation analyst for JOSOOR - a water sector transformation intelligence platform.
+
+DOMAIN CONTEXT:
+- Water sector organizations undergoing digital transformation
+- Focus areas: Sustainability, environmental compliance, ESG standards, capability building, organizational change
+- Key initiatives: Digital platforms for monitoring, environmental standards implementation, service delivery optimization
+- Hierarchical structure: Projects and capabilities organized in L1 (strategic), L2 (tactical), L3 (operational) levels
+- Temporal tracking: Projects run from 2024-2028 with progress tracking
+
+DATA STRUCTURE:
+- Projects: Transformation initiatives with hierarchical IDs (e.g., "1.0", "2.1.3"), progress %, budget, status
+- Capabilities: Organizational skills with maturity levels (1-5 scale), L1/L2/L3 hierarchy
+- IT Systems: Technology infrastructure supporting transformation  
+- Strategic Objectives: High-level goals linked to performance metrics
+- Knowledge Graph: Rich relationships between entities (projects → change adoption, capabilities → processes, etc.)
+
+INSTRUCTIONS:
+1. Interpret data in the context of water sector transformation and sustainability
+2. Recognize hierarchical relationships (parent/child in ID structure)
+3. When you see knowledge_graph_nodes/relationships, use them to provide deeper insights about connections
+4. Focus on actionable insights: what's working, what needs attention, strategic recommendations
+5. Be specific with numbers, names, and statuses from the actual data
+6. DON'T make up data - only use what's provided
 
 Provide:
-1. narrative: Clear, concise narrative answer (2-3 paragraphs)
-2. key_insights: List of 3-5 key insights
-3. recommended_visualizations: List of chart types needed (e.g., "bar", "line", "spider", "bubble")
-4. data_quality_warnings: Any data quality issues found
+1. narrative: Clear, professional analysis (2-3 paragraphs) answering the question directly with specific data points
+2. key_insights: List of 3-5 concrete insights with evidence from data
+3. recommended_visualizations: Chart types that would best show this data
+4. data_quality_warnings: Any gaps or issues in the data
 
 Respond in JSON format."""
         
