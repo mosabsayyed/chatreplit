@@ -70,15 +70,14 @@ class PostgresClient:
             await self.connect()
         
         if entity_types:
-            placeholders = ','.join([f'${i+1}' for i in range(len(entity_types))])
             query = f"""
                 SELECT id, type, props, valid_from, valid_to
                 FROM kg_nodes
-                WHERE type = ANY(${{{placeholders}}})
+                WHERE type = ANY($1::text[])
                 ORDER BY valid_from DESC
                 LIMIT {limit}
             """
-            return await self.execute_query(query, entity_types)
+            return await self.execute_query(query, [entity_types])
         else:
             query = f"""
                 SELECT id, type, props, valid_from, valid_to
