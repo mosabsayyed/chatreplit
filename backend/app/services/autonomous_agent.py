@@ -43,10 +43,10 @@ Respond in JSON format only."""
 
 
 class HybridRetrievalMemory:
-    """Layer 2: Retrieve relevant data from PostgreSQL"""
+    """Layer 2: Retrieve relevant data from PostgreSQL + Knowledge Graph"""
     
     async def process(self, intent: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Retrieve data based on intent"""
+        """Retrieve data from structured tables and knowledge graph"""
         
         year = intent.get("time_period", {}).get("year", 2024)
         quarter = intent.get("time_period", {}).get("quarter")
@@ -54,12 +54,14 @@ class HybridRetrievalMemory:
         
         retrieved_data = {}
         
+        # Query structured entity tables with correct column names
         if "ent_projects" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view", "general_question"]:
             query = """
-                SELECT id, year, quarter, project_name, status, progress_percentage, 
-                       budget_allocated, budget_spent
+                SELECT id, year, quarter, name, status, progress_percentage, 
+                       budget, start_date, end_date, level
                 FROM ent_projects 
                 WHERE year = $1
+                ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
                 LIMIT 20
             """
             projects = await postgres_client.execute_query(query, [year])
@@ -67,9 +69,10 @@ class HybridRetrievalMemory:
         
         if "ent_capabilities" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view"]:
             query = """
-                SELECT id, year, capability_name, maturity_level
+                SELECT id, year, name, maturity_level, status, level
                 FROM ent_capabilities 
                 WHERE year = $1
+                ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
                 LIMIT 20
             """
             capabilities = await postgres_client.execute_query(query, [year])
@@ -77,13 +80,34 @@ class HybridRetrievalMemory:
         
         if "sec_objectives" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view"]:
             query = """
-                SELECT id, year, objective_name, target_value, actual_value, achievement_rate
+                SELECT id, year, name, description
                 FROM sec_objectives 
                 WHERE year = $1
                 LIMIT 20
             """
             objectives = await postgres_client.execute_query(query, [year])
             retrieved_data["objectives"] = objectives
+        
+        # Query knowledge graph for rich relationships and context
+        try:
+            # Get relevant KG nodes
+            kg_types = ["ent_projects", "ent_capabilities", "ent_risks", "sec_objectives"]
+            kg_nodes = await postgres_client.query_knowledge_graph(entity_types=kg_types, limit=50)
+            if kg_nodes:
+                retrieved_data["knowledge_graph_nodes"] = kg_nodes
+            
+            # Get key relationships from KG
+            key_rels = [
+                "jt_ent_capabilities_ent_processes_join",
+                "jt_ent_projects_ent_change_adoption_join",
+                "jt_sec_performance_ent_capabilities_join"
+            ]
+            kg_edges = await postgres_client.query_knowledge_graph_relationships(rel_types=key_rels, limit=100)
+            if kg_edges:
+                retrieved_data["knowledge_graph_relationships"] = kg_edges
+        except Exception as e:
+            # KG query failed, continue with structured data only
+            retrieved_data["kg_error"] = str(e)
         
         retrieved_data["query_metadata"] = {
             "year": year,
@@ -163,12 +187,12 @@ class VisualizationGenerationMemory:
                 fig, ax = plt.subplots(figsize=(10, 6))
                 
                 projects = retrieved_data["projects"][:10]
-                names = [p.get('project_name', 'Unknown')[:20] for p in projects]
-                progress = [p.get('progress_percentage', 0) for p in projects]
+                names = [p.get('name', 'Unknown')[:30] for p in projects]
+                progress = [float(p.get('progress_percentage', 0) or 0) * 100 for p in projects]
                 
-                ax.barh(names, progress, color='#4CAF50')
+                ax.barh(names, progress, color='#9C27B0')
                 ax.set_xlabel('Progress (%)')
-                ax.set_title('Project Progress Overview')
+                ax.set_title('Project Progress Overview - JOSOOR Digital Twin')
                 ax.set_xlim(0, 100)
                 plt.tight_layout()
                 
