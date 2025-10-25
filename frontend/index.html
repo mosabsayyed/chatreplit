@@ -208,7 +208,8 @@
     </div>
 
     <script>
-        const API_URL = '/api/v1/agent/ask';
+        const API_URL = '/api/v1/chat/message';
+        let currentConversationId = null;
         
         function addMessage(content, isUser = false) {
             const chatContainer = document.getElementById('chatContainer');
@@ -247,15 +248,21 @@
             document.getElementById('chatContainer').appendChild(loadingDiv);
             
             try {
+                const requestBody = {
+                    query: question,
+                    persona: 'transformation_analyst'
+                };
+                
+                if (currentConversationId) {
+                    requestBody.conversation_id = currentConversationId;
+                }
+                
                 const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        question: question,
-                        context: null
-                    })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 loadingDiv.remove();
@@ -266,10 +273,12 @@
                 
                 const data = await response.json();
                 
-                let content = `<p>${data.narrative}</p>`;
+                currentConversationId = data.conversation_id;
                 
-                if (data.visualizations && data.visualizations.length > 0) {
-                    data.visualizations.forEach(viz => {
+                let content = `<p>${data.message}</p>`;
+                
+                if (data.visualization && data.visualization.visualizations && data.visualization.visualizations.length > 0) {
+                    data.visualization.visualizations.forEach(viz => {
                         content += `
                             <div class="visualization">
                                 <h4>${viz.title}</h4>
@@ -280,7 +289,10 @@
                     });
                 }
                 
-                content += `<div class="confidence ${data.confidence.level}">Confidence: ${data.confidence.level.toUpperCase()} (${Math.round(data.confidence.score * 100)}%)</div>`;
+                if (data.metadata && data.metadata.confidence) {
+                    const conf = data.metadata.confidence;
+                    content += `<div class="confidence ${conf.level}">Confidence: ${conf.level.toUpperCase()} (${Math.round(conf.score * 100)}%)</div>`;
+                }
                 
                 addMessage(content);
                 

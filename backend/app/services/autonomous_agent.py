@@ -81,8 +81,20 @@ Respond in JSON format only."""
         response = await llm_provider.chat_completion(messages, temperature=0.3)
         
         try:
-            intent = json.loads(response)
-        except:
+            # Strip markdown code fences if present (```json ... ```)
+            cleaned_response = response.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]  # Remove ```json
+            if cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]  # Remove ```
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]  # Remove trailing ```
+            cleaned_response = cleaned_response.strip()
+            
+            intent = json.loads(cleaned_response)
+        except Exception as e:
+            print(f"⚠️  JSON parsing error: {e}")
+            print(f"⚠️  Raw response: {response[:200]}")
             intent = {
                 "intent_type": "general_question",
                 "entities": [],
@@ -134,7 +146,7 @@ class HybridRetrievalMemory:
         
         if "sec_objectives" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view"]:
             query = """
-                SELECT id, year, name, description
+                SELECT id, year, name, level, status, expected_outcomes, priority_level
                 FROM sec_objectives 
                 WHERE year = $1
                 LIMIT 20
