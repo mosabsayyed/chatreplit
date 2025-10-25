@@ -44,18 +44,22 @@ CONTEXT:
 - Entity types: Projects (transformation initiatives), Capabilities (organizational skills), IT Systems, Processes, Strategic Objectives
 - Data structure: Hierarchical (L1, L2, L3 levels), temporal (2024-2028), with relationships{conversation_history}
 
-CONVERSATION MEMORY:
-- Use the conversation history above to understand references like "it", "that", "them", "previous"
+CONVERSATION MEMORY (CRITICAL):
+- Use the conversation history above to understand references like "it", "that", "them", "previous", "list them"
 - If the user says "compare it", look for what was analyzed in previous messages
+- If the user says "list them" or "show them", extract the entities from the previous question
 - Resolve pronouns and references based on conversation context
+- EXAMPLE: If previous was "how many capabilities in 2025?" and current is "list them", then entities=["ent_capabilities"]
 
 Extract from the user question:
 1. intent_type: "dashboard_view", "drill_down", "comparison", "trend_analysis", "general_question"
-2. entities: List of entities (e.g., ["ent_projects", "ent_capabilities", "sec_objectives"])
+2. entities: List of entities (e.g., ["ent_projects", "ent_capabilities", "sec_objectives"]) - MUST resolve from conversation history if pronouns used
 3. time_period: {{"year": int (default {temporal_ctx['current_year']} if not specified), "quarter": int or null}}
 4. analysis_type: "descriptive", "diagnostic", "predictive", "prescriptive"
 5. resolved_references: If question has "it", "that", etc., what do they refer to based on history?
-6. is_simple: boolean - TRUE if query is simple (one entity/table, direct lookup, or metadata question like "what year?"), FALSE if complex (multiple entities, comparisons, analysis)
+6. is_simple: boolean - TRUE if query is simple (one entity/table, direct lookup, or metadata question), FALSE if complex (multiple entities, comparisons)
+7. confidence: "high" (clear intent), "medium" (partial understanding), "low" (unclear - need clarification)
+8. clarification_needed: string or null - If confidence is low, what clarifying question should be asked?
 
 ROUTING LOGIC:
 - is_simple = TRUE: Single entity query, metadata question, direct lookups → Skip complex analysis layers
@@ -84,7 +88,9 @@ Respond in JSON format only."""
                 "entities": [],
                 "time_period": {"year": CURRENT_YEAR, "quarter": None},
                 "analysis_type": "descriptive",
-                "is_simple": False
+                "is_simple": False,
+                "confidence": "low",
+                "clarification_needed": "I'm not sure what you're asking about. Could you please rephrase your question?"
             }
         
         return intent
@@ -338,12 +344,12 @@ class AutonomousAnalyticalAgent:
         intent: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
-        """Handle simple queries with direct response (no full analysis pipeline)"""
+        """Handle simple queries with direct response and data retrieval"""
         
         temporal_ctx = get_temporal_context()
         entities = intent.get("entities", [])
         
-        # Build simple prompt for direct answers
+        # Build simple prompt for direct answers with data awareness
         system_prompt = f"""You are a helpful assistant for JOSOOR transformation analytics platform.
 
 TEMPORAL CONTEXT:
@@ -353,27 +359,33 @@ TEMPORAL CONTEXT:
 
 DOMAIN: Water sector transformation, sustainability, environmental compliance.
 
-Answer the question directly and concisely. If it's a simple fact (like "what year?"), respond in 1-2 sentences.
-If it asks about data, provide a brief, clear summary."""
+RESPONSE RULES:
+- If asking for a list or specific data: Provide actual data from the available data section
+- If asking a simple fact (like "what year?"): Respond in 1-2 sentences
+- Be concise but include specific details (names, IDs, statuses) when data is available
+- If no data provided but user asks for specific items, acknowledge you need more context"""
 
-        # Check if we need minimal data retrieval
+        # ALWAYS retrieve data if entities are present (even for simple queries)
         retrieved_data = {}
-        if entities and len(entities) == 1:
-            # Simple single-entity query - retrieve minimal data
+        if entities:
+            # Retrieve data for simple queries
             retrieved_data = await self.layer2.process(intent, context)
         
-        # Generate simple response
+        # Generate simple response WITH data
         user_prompt = f"Question: {question}"
         if retrieved_data:
-            data_summary = json.dumps(retrieved_data, default=str)[:1000]
-            user_prompt += f"\n\nAvailable data: {data_summary}"
+            # Include more data for simple queries (up to 2000 chars instead of 1000)
+            data_summary = json.dumps(retrieved_data, default=str)[:2000]
+            user_prompt += f"\n\nAvailable data:\n{data_summary}\n\nProvide a direct answer using the specific data above."
+        else:
+            user_prompt += "\n\nNo specific data available for this query."
         
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
         
-        narrative = await llm_provider.chat_completion(messages, temperature=0.5, max_tokens=500)
+        narrative = await llm_provider.chat_completion(messages, temperature=0.5, max_tokens=800)
         
         return AgentResponse(
             narrative=narrative,
@@ -386,6 +398,8 @@ If it asks about data, provide a brief, clear summary."""
             metadata={
                 "intent": intent,
                 "routing": "simple_query",
+                "entities_resolved": entities,
+                "data_retrieved": bool(retrieved_data),
                 "timestamp": datetime.now().isoformat()
             }
         )
@@ -400,6 +414,27 @@ If it asks about data, provide a brief, clear summary."""
         try:
             # LAYER 1: Understand intent and determine routing
             intent = await self.layer1.process(question, context)
+            
+            # CHECK FOR CLARIFICATION NEEDED
+            confidence = intent.get("confidence", "high")
+            clarification = intent.get("clarification_needed")
+            
+            if confidence == "low" and clarification:
+                # EARLY EXIT: Ask clarifying question instead of processing
+                return AgentResponse(
+                    narrative=clarification,
+                    visualizations=[],
+                    confidence=ConfidenceInfo(
+                        level="low",
+                        score=0.3,
+                        warnings=["Unclear intent - clarification requested"]
+                    ),
+                    metadata={
+                        "intent": intent,
+                        "routing": "clarification_needed",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
             
             # SMART ROUTING: Check if this is a simple query
             is_simple = intent.get("is_simple", False)
