@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.api.v1 import agent, health
+from app.api.v1 import health
 from app.api.routes import chat, debug
 from app.db.postgres_client import postgres_client
 import os
@@ -21,7 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(agent.router, prefix="/api/v1/agent", tags=["Agent"])
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(debug.router, prefix="/api/v1", tags=["Debug"])
