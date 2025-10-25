@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 import os
+import json
 from app.config import settings
 
 class LLMProvider:
@@ -45,9 +46,26 @@ class LLMProvider:
         messages: List[Dict[str, str]],
         model: str = "gpt-4o-mini",
         temperature: float = 0.7,
-        max_tokens: int = 2000
+        max_tokens: int = 2000,
+        debug: bool = False
     ) -> str:
         """Get chat completion from LLM"""
+        
+        # DEBUG: Log actual prompts if debug mode enabled
+        if debug or os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
+            debug_log = {
+                "provider": self.provider,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "messages": messages
+            }
+            print("\n" + "="*80)
+            print("🔍 DEBUG: ACTUAL PROMPT SENT TO LLM")
+            print("="*80)
+            print(json.dumps(debug_log, indent=2))
+            print("="*80 + "\n")
+        
         try:
             client = self._get_client()
             
@@ -72,7 +90,17 @@ class LLMProvider:
                     temperature=temperature,
                     max_tokens=max_tokens
                 )
-                return response.choices[0].message.content
+                result = response.choices[0].message.content
+                
+                # DEBUG: Log response
+                if debug or os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
+                    print("\n" + "="*80)
+                    print("📥 DEBUG: ACTUAL RESPONSE FROM LLM")
+                    print("="*80)
+                    print(result)
+                    print("="*80 + "\n")
+                
+                return result
         
         except Exception as e:
             raise Exception(f"LLM API Error: {str(e)}")

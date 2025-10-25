@@ -55,6 +55,17 @@ Extract from the user question:
 3. time_period: {{"year": int (default {temporal_ctx['current_year']} if not specified), "quarter": int or null}}
 4. analysis_type: "descriptive", "diagnostic", "predictive", "prescriptive"
 5. resolved_references: If question has "it", "that", etc., what do they refer to based on history?
+6. is_simple: boolean - TRUE if query is simple (one entity/table, direct lookup, or metadata question like "what year?"), FALSE if complex (multiple entities, comparisons, analysis)
+
+ROUTING LOGIC:
+- is_simple = TRUE: Single entity query, metadata question, direct lookups → Skip complex analysis layers
+- is_simple = FALSE: Multiple entities, comparisons, trend analysis, worldview chains needed → Full 4-layer processing
+
+Examples:
+- "What year is it?" → is_simple: true
+- "Show me projects" → is_simple: true  
+- "Compare capabilities with objectives" → is_simple: false
+- "What are trends in sustainability?" → is_simple: false
 
 Respond in JSON format only."""
         
@@ -72,7 +83,8 @@ Respond in JSON format only."""
                 "intent_type": "general_question",
                 "entities": [],
                 "time_period": {"year": CURRENT_YEAR, "quarter": None},
-                "analysis_type": "descriptive"
+                "analysis_type": "descriptive",
+                "is_simple": False
             }
         
         return intent
@@ -320,16 +332,83 @@ class AutonomousAnalyticalAgent:
         self.layer3 = AnalyticalReasoningMemory()
         self.layer4 = VisualizationGenerationMemory()
     
+    async def _handle_simple_query(
+        self, 
+        question: str, 
+        intent: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> AgentResponse:
+        """Handle simple queries with direct response (no full analysis pipeline)"""
+        
+        temporal_ctx = get_temporal_context()
+        entities = intent.get("entities", [])
+        
+        # Build simple prompt for direct answers
+        system_prompt = f"""You are a helpful assistant for JOSOOR transformation analytics platform.
+
+TEMPORAL CONTEXT:
+- Current Date: {temporal_ctx['current_date']}
+- Current Year: {temporal_ctx['current_year']}
+- Current Quarter: Q{temporal_ctx['current_quarter']}
+
+DOMAIN: Water sector transformation, sustainability, environmental compliance.
+
+Answer the question directly and concisely. If it's a simple fact (like "what year?"), respond in 1-2 sentences.
+If it asks about data, provide a brief, clear summary."""
+
+        # Check if we need minimal data retrieval
+        retrieved_data = {}
+        if entities and len(entities) == 1:
+            # Simple single-entity query - retrieve minimal data
+            retrieved_data = await self.layer2.process(intent, context)
+        
+        # Generate simple response
+        user_prompt = f"Question: {question}"
+        if retrieved_data:
+            data_summary = json.dumps(retrieved_data, default=str)[:1000]
+            user_prompt += f"\n\nAvailable data: {data_summary}"
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        narrative = await llm_provider.chat_completion(messages, temperature=0.5, max_tokens=500)
+        
+        return AgentResponse(
+            narrative=narrative,
+            visualizations=[],
+            confidence=ConfidenceInfo(
+                level="high",
+                score=0.95,
+                warnings=[]
+            ),
+            metadata={
+                "intent": intent,
+                "routing": "simple_query",
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+    
     async def process_query(
         self, 
         question: str, 
         context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
-        """Process natural language question through all 4 layers"""
+        """Process natural language question through all 4 layers with smart routing"""
         
         try:
+            # LAYER 1: Understand intent and determine routing
             intent = await self.layer1.process(question, context)
             
+            # SMART ROUTING: Check if this is a simple query
+            is_simple = intent.get("is_simple", False)
+            
+            if is_simple:
+                # SHORT-CIRCUIT: Answer simple queries directly without full analysis
+                return await self._handle_simple_query(question, intent, context)
+            
+            # COMPLEX PATH: Full 4-layer processing
             retrieved_data = await self.layer2.process(intent, context)
             
             analysis = await self.layer3.process(question, intent, retrieved_data, context)
