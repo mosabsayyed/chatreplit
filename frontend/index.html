@@ -90,6 +90,26 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
+        .message-content ol {
+            margin: 12px 0;
+            padding-left: 24px;
+            list-style-type: decimal;
+        }
+        
+        .message-content li {
+            margin: 6px 0;
+            line-height: 1.5;
+        }
+        
+        .message-content strong {
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+        
+        .message-content p {
+            margin: 8px 0;
+        }
+        
         .confidence {
             font-size: 12px;
             margin-top: 8px;
@@ -275,7 +295,22 @@
                 
                 currentConversationId = data.conversation_id;
                 
-                let content = `<p>${data.message}</p>`;
+                // Format markdown-style text to HTML
+                let formattedMessage = data.message
+                    // Bold text (**text** -> <strong>text</strong>)
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    // Numbered lists (1. item -> proper list)
+                    .replace(/^(\d+\.\s+.+)$/gm, '<li>$1</li>')
+                    // Wrap consecutive list items in <ol>
+                    .replace(/(<li>.*<\/li>\n?)+/g, '<ol>$&</ol>')
+                    // Remove the number prefix from list items (already in <ol>)
+                    .replace(/<li>\d+\.\s+(.+?)<\/li>/g, '<li>$1</li>')
+                    // Line breaks (double newline -> paragraph break)
+                    .replace(/\n\n/g, '</p><p>')
+                    // Single newlines -> <br>
+                    .replace(/\n/g, '<br>');
+                
+                let content = `<p>${formattedMessage}</p>`;
                 
                 if (data.visualization && data.visualization.visualizations && data.visualization.visualizations.length > 0) {
                     data.visualization.visualizations.forEach(viz => {
