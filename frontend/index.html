@@ -255,9 +255,12 @@
         }
         
         async function sendQuestion() {
+            console.log('🚀 SENDQUESTION CALLED - JavaScript is running!');
             const input = document.getElementById('questionInput');
             const button = document.getElementById('askButton');
             const question = input.value.trim();
+            
+            console.log('📝 Question:', question);
             
             if (!question) return;
             
