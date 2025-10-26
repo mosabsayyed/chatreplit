@@ -272,8 +272,25 @@ Analyze and respond in JSON format."""}
         
         response = await llm_provider.chat_completion(messages, temperature=0.3, max_tokens=2500)
         
+        # Strip markdown code fences if present (```json ... ```)
+        cleaned_response = response.strip()
+        if cleaned_response.startswith("```"):
+            # Remove opening fence (```json or ```)
+            lines = cleaned_response.split('\n')
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            # Remove closing fence (```)
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned_response = '\n'.join(lines)
+        
+        # Fix invalid control characters (unescaped newlines, tabs, etc.)
+        import re
+        # Remove or escape control characters that break JSON
+        cleaned_response = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', cleaned_response)
+        
         try:
-            analysis = json.loads(response)
+            analysis = json.loads(cleaned_response)
             # Ensure all expected fields exist
             if "chain_selected" not in analysis:
                 analysis["chain_selected"] = "Unknown"
@@ -281,15 +298,19 @@ Analyze and respond in JSON format."""}
                 analysis["chain_reasoning"] = "Chain not specified"
             if "suggestions" not in analysis:
                 analysis["suggestions"] = []
-        except:
-            # Fallback if JSON parsing fails
+            if "narrative" not in analysis:
+                analysis["narrative"] = "Analysis completed based on available data."
+        except Exception as e:
+            # Fallback if JSON parsing fails - log the error
+            print(f"⚠️ Layer 3 JSON parsing failed: {e}")
+            print(f"Raw response: {response[:500]}")
             analysis = {
                 "chain_selected": "Unknown",
                 "chain_reasoning": "Unable to parse chain information",
-                "narrative": response,
-                "key_insights": ["Analysis completed based on available data"],
+                "narrative": "I analyzed the data but encountered a formatting issue. Please try rephrasing your question.",
+                "key_insights": ["Analysis attempted but formatting error occurred"],
                 "recommended_visualizations": ["bar"],
-                "data_quality_warnings": [],
+                "data_quality_warnings": ["Response parsing error"],
                 "suggestions": []
             }
         
@@ -425,7 +446,9 @@ RESPONSE RULES:
         
         try:
             # LAYER 1: Understand intent and determine routing
+            print("🔷 LAYER 1: IntentUnderstanding - Starting...")
             intent = await self.layer1.process(question, context)
+            print(f"✅ LAYER 1: Complete - Intent: {intent.get('intent_type')}, Entities: {intent.get('entities')}")
             
             # CHECK FOR CLARIFICATION NEEDED
             confidence = intent.get("confidence", "high")
@@ -453,14 +476,21 @@ RESPONSE RULES:
             
             if is_simple:
                 # SHORT-CIRCUIT: Answer simple queries directly without full analysis
+                print("⚡ SIMPLE QUERY ROUTE: Skipping layers 3-4")
                 return await self._handle_simple_query(question, intent, context)
             
             # COMPLEX PATH: Full 4-layer processing
+            print("🔷 LAYER 2: HybridRetrieval - Starting...")
             retrieved_data = await self.layer2.process(intent, context)
+            print(f"✅ LAYER 2: Complete - Retrieved {len(retrieved_data)} data sources")
             
+            print("🔷 LAYER 3: AnalyticalReasoning - Starting...")
             analysis = await self.layer3.process(question, intent, retrieved_data, context)
+            print(f"✅ LAYER 3: Complete - Chain: {analysis.get('chain_selected')}")
             
+            print("🔷 LAYER 4: VisualizationGeneration - Starting...")
             visualizations = await self.layer4.process(analysis, retrieved_data)
+            print(f"✅ LAYER 4: Complete - Generated {len(visualizations)} visualizations")
             
             confidence_level = "high"
             confidence_score = 0.85
