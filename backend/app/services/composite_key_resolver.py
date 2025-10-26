@@ -262,35 +262,43 @@ class CompositeKeyResolver:
         Check if entity matches reference text.
         
         Matching strategies:
-        1. Name field contains reference text
-        2. Type matches context hint
-        3. ID contains reference text
-        4. Description contains reference text
+        1. Generic pronouns (it, that, this) match any recent entity
+        2. "that [type]" matches entity type (e.g., "that project" matches _type="project")
+        3. Name field contains reference text
+        4. Type matches context hint
+        5. ID contains reference text
         """
         reference_lower = reference_text.lower()
         
-        # Strategy 1: Name fields
+        # Strategy 1: Generic pronoun matching (highest priority)
+        if reference_lower in ['it', 'that', 'this', 'those', 'these']:
+            return True
+        
+        # Strategy 2: "that [type]" pattern matching
+        # Extract type from reference like "that project", "the entity", "those capabilities"
+        entity_type = entity.get('_type', '')
+        for type_keyword in ['project', 'entity', 'capability', 'risk', 'it_system', 'control', 'strategy', 'tactic', 'process']:
+            if type_keyword in reference_lower and type_keyword in entity_type:
+                return True
+        
+        # Strategy 3: Name field matching
         name_fields = ['name', 'title', 'description', 'display_name']
         for field in name_fields:
             if field in entity:
-                if reference_lower in str(entity[field]).lower():
+                entity_value = str(entity[field]).lower()
+                # Check if any word from reference is in the name
+                if reference_lower in entity_value:
                     return True
         
-        # Strategy 2: Type matching with context hint
+        # Strategy 4: Type matching with context hint
         if context_hint:
-            entity_type = entity.get('_type', '')
             if context_hint.lower() in entity_type.lower():
                 return True
         
-        # Strategy 3: ID matching
+        # Strategy 5: ID matching
         if 'id' in entity:
             if reference_lower in str(entity['id']).lower():
                 return True
-        
-        # Strategy 4: Generic pronoun matching (last entity of expected type)
-        if reference_text.lower() in ['it', 'that', 'this']:
-            # If no specific match, assume referring to most recent entity
-            return True
         
         return False
     
