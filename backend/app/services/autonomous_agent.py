@@ -16,63 +16,126 @@ with open(WORLDVIEW_MAP_PATH, 'r') as f:
     WORLDVIEW_MAP = json.load(f)
 
 class IntentUnderstandingMemory:
-    """Layer 1: Extract intent from user query"""
+    """Layer 1: Extract intent from user query with composite key resolution"""
+    
+    def __init__(self, conversation_manager=None):
+        """Initialize Layer 1 with optional conversation manager for reference resolution"""
+        self.conversation_manager = conversation_manager
+        self.resolver = None
+        if conversation_manager:
+            self.resolver = CompositeKeyResolver(conversation_manager)
     
     async def process(self, question: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Analyze question and extract intent, entities, time period WITH CONVERSATION MEMORY"""
+        """Analyze question and extract intent with COMPOSITE KEY RESOLUTION"""
         
         # Get conversation history if available
         conversation_history = ""
-        if context and "conversation_history" in context:
-            conversation_history = f"\n\nCONVERSATION HISTORY:\n{context['conversation_history']}"
+        entity_cache = {}
+        if context:
+            if "conversation_history" in context:
+                conversation_history = f"\n\nCONVERSATION HISTORY:\n{context['conversation_history']}"
+            if "conversation_id" in context and self.resolver:
+                # Get entity cache for reference resolution
+                conv_id = str(context["conversation_id"])
+                entity_cache = self.resolver.entity_cache.get(conv_id, {})
         
         # Get current temporal context
         temporal_ctx = get_temporal_context()
         
-        system_prompt = f"""You are analyzing questions for JOSOOR - an enterprise transformation analytics platform.
+        # Load worldview chains for context
+        worldview_chains = json.dumps(WORLDVIEW_MAP.get("chains", {}), indent=2)
+        
+        system_prompt = f"""You are the Intent Analysis Agent for JOSOOR's organizational transformation system.
 
-TEMPORAL AWARENESS (CRITICAL):
+Your role is to analyze user queries and resolve them to structured context objects that enable accurate relationship tracing across the Virtual Knowledge Graph (VKG).
+
+## CRITICAL CAPABILITIES
+
+### 1. Reference Resolution to Composite Keys
+When users say "that project", "it", "the entity mentioned earlier", you MUST:
+- Search conversation history for the referenced entity
+- Extract the COMPOSITE KEY: (id, year)
+- Return structured entity object, NOT just text string
+
+Example:
+User Turn 1: "Show me Project Atlas"
+System returns: {{id: "PRJ001", year: 2024, name: "Project Atlas"}}
+
+User Turn 2: "Show capabilities for that project"
+YOU MUST RESOLVE: 
+{{
+  "entity_id": "PRJ001",
+  "entity_year": 2024,
+  "entity_table": "ent_projects",
+  "entity_type": "project",
+  "display_name": "Project Atlas"
+}}
+
+NOT: {{"reference": "Project Atlas"}} ❌
+
+### 2. World-View Map Chain Selection
+Available Chains:
+{worldview_chains}
+
+Selection Criteria:
+- Minimize unnecessary hops
+- Cover the required path
+- Match user's exploration pattern
+
+### 3. Multi-Hop Path Planning
+For complex queries like "Show risks affecting IT systems through projects":
+- Identify required path: Entity → Projects → IT Systems → Risks (4 hops)
+- Select chain that supports this traversal
+- DO NOT select shorter chain that only covers 2 hops
+
+## TEMPORAL AWARENESS
 - TODAY'S DATE: {temporal_ctx['current_date']}
 - CURRENT YEAR: {temporal_ctx['current_year']}
 - CURRENT QUARTER: Q{temporal_ctx['current_quarter']}
-- Analysis timeframe: 2024-2028
 - When user asks about "current" or "this year", they mean {temporal_ctx['current_year']}
-- Historical data: < {temporal_ctx['current_year']}
-- Future projections: > {temporal_ctx['current_year']}
 
-CONTEXT:
-- Domain: Water sector transformation, sustainability, environmental compliance, organizational capability building
-- Entity types: Projects (transformation initiatives), Capabilities (organizational skills), IT Systems, Processes, Strategic Objectives
-- Data structure: Hierarchical (L1, L2, L3 levels), temporal (2024-2028), with relationships{conversation_history}
+## CONVERSATION MEMORY
+{conversation_history}
 
-CONVERSATION MEMORY (CRITICAL):
-- Use the conversation history above to understand references like "it", "that", "them", "previous", "list them"
-- If the user says "compare it", look for what was analyzed in previous messages
-- If the user says "list them" or "show them", extract the entities from the previous question
-- Resolve pronouns and references based on conversation context
-- EXAMPLE: If previous was "how many capabilities in 2025?" and current is "list them", then entities=["ent_capabilities"]
+Previously Retrieved Entities:
+{json.dumps(entity_cache, indent=2) if entity_cache else "None"}
 
-Extract from the user question:
-1. intent_type: "dashboard_view", "drill_down", "comparison", "trend_analysis", "general_question"
-2. entities: List of entities (e.g., ["ent_projects", "ent_capabilities", "sec_objectives"]) - MUST resolve from conversation history if pronouns used
-3. time_period: {{"year": int (default {temporal_ctx['current_year']} if not specified), "quarter": int or null}}
-4. analysis_type: "descriptive", "diagnostic", "predictive", "prescriptive"
-5. resolved_references: If question has "it", "that", etc., what do they refer to based on history?
-6. is_simple: boolean - TRUE if query is simple (one entity/table, direct lookup, or metadata question), FALSE if complex (multiple entities, comparisons)
-7. confidence: "high" (clear intent), "medium" (partial understanding), "low" (unclear - need clarification)
-8. clarification_needed: string or null - If confidence is low, what clarifying question should be asked?
+## YOUR TASK
 
-ROUTING LOGIC:
-- is_simple = TRUE: Single entity query, metadata question, direct lookups → Skip complex analysis layers
-- is_simple = FALSE: Multiple entities, comparisons, trend analysis, worldview chains needed → Full 4-layer processing
+Output structured JSON:
+{{
+  "user_intent": "search|compare|trace|analyze|summarize",
+  "entity_mentions": [
+    {{"text": "raw text", "type": "project|entity|risk", "is_reference": true|false, "confidence": 0.0-1.0}}
+  ],
+  "resolved_references": [
+    {{"entity_id": "PRJ001", "entity_year": 2024, "entity_table": "ent_projects", "entity_type": "project", "display_name": "Project Atlas", "source": "conversation_turn_3"}}
+  ],
+  "chain_selection": {{
+    "chain_id": "4_Entity_to_Risk_via_Projects",
+    "estimated_hops": 3,
+    "source_table": "ent_entities",
+    "target_tables": ["sec_risks"],
+    "reasoning": "User wants to trace risks from entity through projects."
+  }},
+  "target_entities": ["sec_risks", "ent_it_systems"],
+  "filters": {{"year": {temporal_ctx['current_year']}, "status": "active"}},
+  "temporal_scope": {{"mode": "single|comparison|trend", "years": [{temporal_ctx['current_year']}]}},
+  "complexity_score": 1-10,
+  "requires_multi_turn": true|false,
+  "is_simple": boolean,
+  "confidence": "high"|"medium"|"low",
+  "clarification_needed": string or null
+}}
 
-Examples:
-- "What year is it?" → is_simple: true
-- "Show me projects" → is_simple: true  
-- "Compare capabilities with objectives" → is_simple: false
-- "What are trends in sustainability?" → is_simple: false
+## CRITICAL RULES
+1. NEVER return text-only references - Always resolve to composite keys
+2. ALWAYS include entity_year in resolved references
+3. ALWAYS select chain that covers full path
+4. USE conversation history - Don't ignore previous turns
+5. PREFER longer chains when uncertain
 
-Respond in JSON format only."""
+Output ONLY valid JSON. No markdown, no explanations outside JSON."""
         
         messages = [
             {"role": "system", "content": system_prompt},
@@ -110,11 +173,153 @@ Respond in JSON format only."""
 
 
 class HybridRetrievalMemory:
-    """Layer 2: Retrieve relevant data from PostgreSQL + Knowledge Graph"""
+    """Layer 2: Retrieve relevant data from PostgreSQL + Knowledge Graph with composite key SQL generation"""
+    
+    async def generate_sql_with_composite_keys(self, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Generate SQL query with MANDATORY composite key enforcement"""
+        
+        # Extract chain selection and resolved references from Layer 1
+        chain_selection = intent.get("chain_selection", {})
+        resolved_refs = intent.get("resolved_references", [])
+        
+        if not chain_selection or not resolved_refs:
+            return None  # Fallback to hardcoded queries
+        
+        source_id = resolved_refs[0].get("entity_id") if resolved_refs else None
+        source_year = resolved_refs[0].get("entity_year") if resolved_refs else None
+        source_table = chain_selection.get("source_table")
+        target_tables = chain_selection.get("target_tables", [])
+        
+        if not source_id or not source_year or not source_table:
+            return None
+        
+        # Enhanced Layer 2 SQL Generation Prompt with Few-Shot Examples
+        system_prompt = f"""You are an expert SQL query generator for JOSOOR's time-series organizational transformation database.
+
+## ⚠️ CRITICAL CONSTRAINT: COMPOSITE KEY ENFORCEMENT
+
+Every entity/sector table uses **(id, year)** as the composite primary key.
+
+### THE RULE
+**ALL JOINs MUST reference BOTH columns.**
+**ALL WHERE clauses filtering by ID MUST include year.**
+
+### INCORRECT (WILL FAIL OR RETURN WRONG DATA)
+```sql
+❌ JOIN jt_entity_projects ep ON e.id = ep.entity_id
+❌ WHERE e.id = 'ENT001'
+```
+
+### CORRECT (REQUIRED)
+```sql
+✅ JOIN jt_entity_projects ep ON e.id = ep.entity_id AND e.year = ep.entity_year
+✅ WHERE e.id = 'ENT001' AND e.year = 2024
+```
+
+## COMPOSITE KEY TABLES (Reference)
+All tables starting with `ent_`, `sec_`, `str_`, `tac_` use composite keys (id, year).
+All join tables (`jt_*`) use composite foreign keys referencing both columns.
+
+## FEW-SHOT EXAMPLES
+
+### Example 1: Single-Hop Query
+**Query:** "Show projects for Entity ENT001 in 2024"
+
+**SQL:**
+```sql
+SELECT 
+    p.id, p.year, p.name, p.status, p.start_date, p.end_date
+FROM ent_entities e
+JOIN jt_entity_projects ep 
+    ON e.id = ep.entity_id AND e.year = ep.entity_year
+JOIN ent_projects p 
+    ON ep.project_id = p.id AND ep.project_year = p.year
+WHERE e.id = 'ENT001' AND e.year = 2024;
+```
+
+### Example 2: Multi-Hop Query  
+**Query:** "Show capabilities for Project PRJ001"
+
+**SQL:**
+```sql
+SELECT 
+    c.id, c.year, c.name, c.maturity_level
+FROM ent_projects p
+JOIN jt_project_capabilities pc 
+    ON p.id = pc.project_id AND p.year = pc.project_year
+JOIN ent_capabilities c 
+    ON pc.capability_id = c.id AND pc.capability_year = c.year
+WHERE p.id = 'PRJ001' AND p.year = 2024;
+```
+
+## VALIDATION CHECKLIST
+Before returning SQL, verify:
+- [ ] All JOINs reference both id AND year
+- [ ] WHERE clause includes year condition
+- [ ] Number of JOINs matches path length
+- [ ] No single-column JOINs present
+
+## YOUR TASK: Generate SQL
+
+**Source Entity:** {source_table} (id={source_id}, year={source_year})
+**Target Entities:** {target_tables}
+**Chain:** {chain_selection.get('chain_id')}
+
+Return ONLY valid JSON:
+{{
+  "reasoning": {{
+    "source": "{source_table} ({source_id}, {source_year})",
+    "target": "{target_tables[0] if target_tables else 'unknown'}",
+    "composite_key_count": <number>,
+    "validation": "all JOINs use composite keys"
+  }},
+  "sql": "SELECT ... (complete query)"
+}}"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "Generate the SQL query now with composite key compliance."}
+        ]
+        
+        try:
+            response = await llm_provider.chat_completion(messages, temperature=0.2, max_tokens=1500)
+            
+            # Parse SQL response
+            cleaned = response.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            if cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            
+            sql_response = json.loads(cleaned)
+            return sql_response
+        except Exception as e:
+            print(f"⚠️ SQL generation failed: {e}")
+            return None
     
     async def process(self, intent: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve data from structured tables and knowledge graph"""
         
+        # TRY: Generate SQL with composite keys if chain_selection available
+        generated_sql = await self.generate_sql_with_composite_keys(intent)
+        if generated_sql and "sql" in generated_sql:
+            print(f"✅ Generated SQL with composite keys: {generated_sql['reasoning']}")
+            try:
+                # Execute generated SQL
+                results = await postgres_client.execute_query(generated_sql["sql"], [])
+                return {
+                    "generated_query_results": results,
+                    "sql": generated_sql["sql"],
+                    "query_metadata": generated_sql["reasoning"]
+                }
+            except Exception as e:
+                print(f"⚠️ Generated SQL failed to execute: {e}")
+                # Fall through to hardcoded queries
+        
+        # FALLBACK: Use hardcoded queries if generation fails
         year = intent.get("time_period", {}).get("year", CURRENT_YEAR)
         quarter = intent.get("time_period", {}).get("quarter")
         entities = intent.get("entities", [])
@@ -366,8 +571,10 @@ class VisualizationGenerationMemory:
 class AutonomousAnalyticalAgent:
     """Main orchestrator for the 4-layer autonomous agent"""
     
-    def __init__(self):
-        self.layer1 = IntentUnderstandingMemory()
+    def __init__(self, conversation_manager=None):
+        """Initialize agent with optional conversation_manager for optimization features"""
+        self.conversation_manager = conversation_manager
+        self.layer1 = IntentUnderstandingMemory(conversation_manager)
         self.layer2 = HybridRetrievalMemory()
         self.layer3 = AnalyticalReasoningMemory()
         self.layer4 = VisualizationGenerationMemory()
@@ -538,4 +745,6 @@ RESPONSE RULES:
                 metadata={"error": str(e)}
             )
 
+# Singleton for backward compatibility (initialized without conversation_manager)
+# For optimized performance, instantiate with conversation_manager in chat.py
 autonomous_agent = AutonomousAnalyticalAgent()

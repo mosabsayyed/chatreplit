@@ -111,13 +111,17 @@ async def send_message(
             10
         )
         
-        # Import and initialize autonomous agent
-        from app.services.autonomous_agent import autonomous_agent
+        # OPTIMIZATION: Initialize agent with conversation_manager for composite key resolution
+        from app.services.autonomous_agent import AutonomousAnalyticalAgent
+        agent = AutonomousAnalyticalAgent(conversation_manager)
         
         # Process through 4-layer autonomous agent WITH CONTEXT
-        agent_response = await autonomous_agent.process_query(
+        agent_response = await agent.process_query(
             question=request.query,
-            context={"conversation_history": conversation_context}
+            context={
+                "conversation_history": conversation_context,
+                "conversation_id": conversation_id
+            }
         )
         
         # CRITICAL FIX: Guard against None/empty visualizations
