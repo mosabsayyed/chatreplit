@@ -231,7 +231,6 @@
     </div>
 
     <script>
-        alert('✅ JavaScript is loaded and running!');
         const API_URL = '/api/v1/chat/message';
         let currentConversationId = null;
         
@@ -256,12 +255,9 @@
         }
         
         async function sendQuestion() {
-            console.log('🚀 SENDQUESTION CALLED - JavaScript is running!');
             const input = document.getElementById('questionInput');
             const button = document.getElementById('askButton');
             const question = input.value.trim();
-            
-            console.log('📝 Question:', question);
             
             if (!question) return;
             
@@ -303,8 +299,6 @@
                 currentConversationId = data.conversation_id;
                 
                 // Format markdown-style text to HTML
-                console.log('🔍 RAW MESSAGE:', data.message);
-                
                 let formattedMessage = data.message
                     // Bold text (**text** -> <strong>text</strong>)
                     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -319,11 +313,7 @@
                     // Single newlines -> <br>
                     .replace(/\n/g, '<br>');
                 
-                console.log('✅ FORMATTED MESSAGE:', formattedMessage);
-                
                 let content = `<p>${formattedMessage}</p>`;
-                
-                console.log('📦 FINAL CONTENT:', content);
                 
                 if (data.visualization && data.visualization.visualizations && data.visualization.visualizations.length > 0) {
                     data.visualization.visualizations.forEach(viz => {
