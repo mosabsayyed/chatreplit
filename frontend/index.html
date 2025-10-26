@@ -299,6 +299,8 @@
                 currentConversationId = data.conversation_id;
                 
                 // Format markdown-style text to HTML
+                console.log('🔍 RAW MESSAGE:', data.message);
+                
                 let formattedMessage = data.message
                     // Bold text (**text** -> <strong>text</strong>)
                     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -313,7 +315,11 @@
                     // Single newlines -> <br>
                     .replace(/\n/g, '<br>');
                 
+                console.log('✅ FORMATTED MESSAGE:', formattedMessage);
+                
                 let content = `<p>${formattedMessage}</p>`;
+                
+                console.log('📦 FINAL CONTENT:', content);
                 
                 if (data.visualization && data.visualization.visualizations && data.visualization.visualizations.length > 0) {
                     data.visualization.visualizations.forEach(viz => {
