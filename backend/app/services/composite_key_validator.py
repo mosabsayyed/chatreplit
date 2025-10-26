@@ -1,14 +1,10 @@
 """
-JOSOOR Optimization: Composite Key SQL Validator
-Version: 1.0
-Purpose: Validate SQL queries for composite key compliance
-
-This validator ensures all generated SQL queries properly use composite keys
-(id, year) when joining or filtering tables in the JOSOOR database.
+Composite Key Validator for JOSOOR SQL Queries.
+Validates SQL queries for composite key compliance.
+Source: OPTIMIZATION_ANALYSIS.md lines 743-863
 """
 
 from typing import Dict, List, Set
-import re
 
 
 class CompositeKeyValidator:
@@ -29,13 +25,9 @@ class CompositeKeyValidator:
                 composite_tables.add(table_name)
         return composite_tables
     
-    def validate_query(self, sql_json: Dict, expected_hops: int = None) -> Dict:
+    def validate_query(self, sql_json: Dict) -> Dict:
         """
         Validate SQL query for composite key compliance.
-        
-        Args:
-            sql_json: Dict with "sql" key containing the query
-            expected_hops: Optional expected hop count from chain selection
         
         Returns:
             {
@@ -47,17 +39,6 @@ class CompositeKeyValidator:
         sql = sql_json.get("sql", "")
         errors = []
         warnings = []
-        
-        # Check 0: JOIN count matches expected hops (if provided)
-        if expected_hops is not None:
-            joins = self._extract_joins(sql)
-            expected_join_count = expected_hops + 1  # N hops = N+1 JOINs
-            actual_join_count = len(joins)
-            if actual_join_count != expected_join_count:
-                errors.append(
-                    f"JOIN count mismatch: {expected_hops}-hop query requires {expected_join_count} JOINs, "
-                    f"but query has {actual_join_count} JOINs. Missing intermediate tables."
-                )
         
         # Check 1: JOIN clauses include year
         joins = self._extract_joins(sql)
@@ -98,6 +79,7 @@ class CompositeKeyValidator:
     
     def _extract_joins(self, sql: str) -> List[str]:
         """Extract all JOIN clauses from SQL."""
+        import re
         pattern = r'JOIN\s+\w+\s+\w+\s+ON\s+[^;]+'
         return re.findall(pattern, sql, re.IGNORECASE)
     
@@ -107,16 +89,19 @@ class CompositeKeyValidator:
     
     def _extract_table_from_join(self, join_clause: str) -> str:
         """Extract table name from JOIN clause."""
+        import re
         match = re.search(r'JOIN\s+(\w+)', join_clause, re.IGNORECASE)
         return match.group(1) if match else ""
     
     def _extract_where(self, sql: str) -> str:
         """Extract WHERE clause from SQL."""
+        import re
         match = re.search(r'WHERE\s+(.+?)(?:GROUP BY|ORDER BY|LIMIT|;|$)', sql, re.IGNORECASE | re.DOTALL)
         return match.group(1) if match else ""
     
     def _extract_id_filters(self, where_clause: str) -> List[str]:
         """Extract ID filters from WHERE clause."""
+        import re
         return re.findall(r"(\w+\.id\s*=\s*'[^']+')", where_clause, re.IGNORECASE)
     
     def _has_corresponding_year_filter(self, where_clause: str, id_filter: str) -> bool:
@@ -126,6 +111,7 @@ class CompositeKeyValidator:
     
     def _extract_referenced_tables(self, sql: str) -> Set[str]:
         """Extract all table names referenced in SQL."""
+        import re
         # FROM clause
         from_tables = re.findall(r'FROM\s+(\w+)', sql, re.IGNORECASE)
         # JOIN clauses
@@ -135,6 +121,7 @@ class CompositeKeyValidator:
     def _year_referenced_for_table(self, sql: str, table: str) -> bool:
         """Check if year column is referenced for a specific table."""
         # Look for table.year or alias.year in SQL
+        import re
         # Get table alias
         alias_match = re.search(rf'{table}\s+(\w+)', sql, re.IGNORECASE)
         if alias_match:

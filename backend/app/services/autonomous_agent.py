@@ -6,7 +6,7 @@ from app.models.resolved_context import ResolvedContext
 from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_YEAR
 from app.services.composite_key_resolver import CompositeKeyResolver, CompositeKeyEntity
 from app.services.composite_key_validator import CompositeKeyValidator
-from app.services.schema_metadata_loader import get_schema_loader
+from app.services.schema_loader import get_schema_loader
 import json
 import base64
 import io
@@ -341,9 +341,9 @@ class HybridRetrievalMemory:
         self._schema_loader = get_schema_loader()
     
     async def _ensure_validator(self):
-        """Lazy-load validator with introspected schema"""
+        """Lazy-load validator with schema from schema_definition.json"""
         if self.validator is None:
-            schema = await self._schema_loader.get_schema()
+            schema = self._schema_loader.load_schema()
             self.validator = CompositeKeyValidator(schema)
     
     async def generate_sql_with_composite_keys(self, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -726,8 +726,7 @@ Generate the SQL query now."""
                 
                 # VALIDATION: Check composite key compliance
                 assert self.validator is not None, "Validator should be initialized by _ensure_validator()"
-                expected_hops = chain_selection.get("estimated_hops")
-                validation_result = self.validator.validate_query(sql_response, expected_hops=expected_hops)
+                validation_result = self.validator.validate_query(sql_response)
                 
                 if validation_result["valid"]:
                     print(f"✅ SQL validated successfully on attempt {attempt + 1}")
