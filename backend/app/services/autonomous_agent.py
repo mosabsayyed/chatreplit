@@ -2,11 +2,11 @@ from typing import List, Dict, Any, Optional
 from app.services.llm_provider import llm_provider
 from app.db.postgres_client import postgres_client
 from app.models.schemas import AgentResponse, Visualization, ConfidenceInfo
-from app.models.resolved_context import ResolvedContext
 from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_YEAR
 from app.services.composite_key_resolver import CompositeKeyResolver, CompositeKeyEntity
 from app.services.composite_key_validator import CompositeKeyValidator
 from app.services.schema_loader import get_schema_loader
+from dataclasses import dataclass
 import json
 import base64
 import io
@@ -17,6 +17,35 @@ from pathlib import Path
 WORLDVIEW_MAP_PATH = Path(__file__).parent.parent / "config" / "worldview_map.json"
 with open(WORLDVIEW_MAP_PATH, 'r') as f:
     WORLDVIEW_MAP = json.load(f)
+
+
+@dataclass
+class ResolvedContext:
+    """
+    Comprehensive context object passed across all agent layers.
+    Source: OPTIMIZATION_ANALYSIS.md lines 398-426
+    """
+    user_id: str
+    conversation_id: str
+    current_turn: int
+    
+    user_intent: str
+    entity_mentions: List[Dict]
+    resolved_references: List[Dict]
+    selected_chain: str
+    required_hops: int
+    
+    target_entities: List[str]
+    filters: Dict[str, Any]
+    temporal_scope: Dict[str, Any]
+    
+    previous_results: List[Dict]
+    entity_cache: Dict[str, Dict]
+    exploration_path: List[str]
+    
+    timestamp: datetime
+    layer_metadata: Dict[str, Any]
+
 
 class IntentUnderstandingMemory:
     """Layer 1: Extract intent from user query with composite key resolution"""
