@@ -13,6 +13,22 @@
 
 ---
 
+## 📝 CHANGELOG
+
+### October 26, 2025 - Documentation Accuracy Update
+**Changed:**
+- ✅ Updated API endpoint from `/api/v1/agent/ask` to `/api/v1/chat/message` (actual endpoint)
+- ✅ Updated router code to match actual implementation:
+  - Changed from `APIRouter(prefix="/api/v1/chat")` to `APIRouter()` (prefix in main.py)
+  - Added dependency injection: `db: Session = Depends(get_db)`
+  - Added threadpool execution: `run_in_threadpool()` for sync DB operations
+- ✅ Updated request schema: `conversation_id` is now `Optional[int]` (was `Optional[str]`)
+- ✅ Added threadpool usage documentation (critical for FastAPI + SQLAlchemy)
+
+**Reason:** Match documentation with actual `backend/app/api/routes/chat.py` implementation
+
+---
+
 ## OVERVIEW
 
 ### Implementation Status

@@ -18,6 +18,23 @@ META:
 
 ---
 
+## 📝 CHANGELOG
+
+### October 26, 2025 - Production Enhancements Documentation
+**Added:**
+- ✅ Layer 3 JSON parsing robustness section
+  - Strips markdown code fences (```json, ```) before parsing
+  - Removes invalid control characters that break JSON.parse()
+  - Implementation in `_parse_layer3_response()` method
+- ✅ Debug logging documentation for all 4 layers
+  - Shows layer execution flow in console
+  - Displays selected worldview chains (e.g., "4_Risk_Build")
+  - Visible in backend logs via `print()` statements
+
+**Reason:** Document production hardening improvements implemented in `backend/app/services/autonomous_agent.py`
+
+---
+
 ## PURPOSE
 
 This document provides the **complete implementation** of the 4-layer Autonomous Analytical Agent that powers the natural language query system. The agent autonomously generates SQL, executes queries, analyzes results, and generates visualizations - all without user SQL exposure.

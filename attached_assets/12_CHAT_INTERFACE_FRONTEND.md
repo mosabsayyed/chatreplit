@@ -13,6 +13,20 @@
 
 ---
 
+## 📝 CHANGELOG
+
+### October 26, 2025 - Markdown Rendering Library Versions
+**Changed:**
+- ✅ Corrected `marked.js` version from "v11.1.1" to "latest from CDN (unpinned)"
+  - Actual CDN URL: `https://cdn.jsdelivr.net/npm/marked/marked.min.js`
+- ✅ Corrected `DOMPurify` version from "v3.0.8" to "v3.0.6"
+  - Actual CDN URL: `https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js`
+- ✅ Updated code examples to show "(ACTUAL CODE)" annotations
+
+**Reason:** Align documentation with actual library versions used in `frontend/index.html`
+
+---
+
 ## OVERVIEW
 
 ### Implementation Status
