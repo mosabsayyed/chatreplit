@@ -2,9 +2,11 @@ from typing import List, Dict, Any, Optional
 from app.services.llm_provider import llm_provider
 from app.db.postgres_client import postgres_client
 from app.models.schemas import AgentResponse, Visualization, ConfidenceInfo
+from app.models.resolved_context import ResolvedContext
 from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_YEAR
 from app.services.composite_key_resolver import CompositeKeyResolver, CompositeKeyEntity
 from app.services.composite_key_validator import CompositeKeyValidator
+from app.services.schema_metadata_loader import get_schema_loader
 import json
 import base64
 import io
@@ -334,14 +336,21 @@ class HybridRetrievalMemory:
     """Layer 2: Retrieve relevant data from PostgreSQL + Knowledge Graph with composite key SQL generation"""
     
     def __init__(self):
-        """Initialize Layer 2 with CompositeKeyValidator"""
-        schema_path = Path(__file__).parent.parent / "config" / "schema_definition.json"
-        with open(schema_path, 'r') as f:
-            schema = json.load(f)
-        self.validator = CompositeKeyValidator(schema)
+        """Initialize Layer 2 with CompositeKeyValidator (lazy-loaded)"""
+        self.validator: Optional[CompositeKeyValidator] = None
+        self._schema_loader = get_schema_loader()
+    
+    async def _ensure_validator(self):
+        """Lazy-load validator with introspected schema"""
+        if self.validator is None:
+            schema = await self._schema_loader.get_schema()
+            self.validator = CompositeKeyValidator(schema)
     
     async def generate_sql_with_composite_keys(self, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Generate SQL query with MANDATORY composite key enforcement"""
+        
+        # Ensure validator is loaded with introspected schema
+        await self._ensure_validator()
         
         # Extract chain selection and resolved references from Layer 1
         chain_selection = intent.get("chain_selection", {})
@@ -716,7 +725,9 @@ Generate the SQL query now."""
                 sql_response = json.loads(cleaned)
                 
                 # VALIDATION: Check composite key compliance
-                validation_result = self.validator.validate_query(sql_response)
+                assert self.validator is not None, "Validator should be initialized by _ensure_validator()"
+                expected_hops = chain_selection.get("estimated_hops")
+                validation_result = self.validator.validate_query(sql_response, expected_hops=expected_hops)
                 
                 if validation_result["valid"]:
                     print(f"✅ SQL validated successfully on attempt {attempt + 1}")
@@ -1110,6 +1121,25 @@ RESPONSE RULES:
             intent = await self.layer1.process(question, context)
             print(f"✅ LAYER 1: Complete - Intent: {intent.get('intent_type')}, Entities: {intent.get('entities')}")
             
+            # CREATE RESOLVED CONTEXT from Layer 1 output
+            # Extract user_id and conversation_id from context
+            user_id = context.get("user_id", "unknown") if context else "unknown"
+            conversation_id = context.get("conversation_id", "default") if context else "default"
+            current_turn = context.get("current_turn", 1) if context else 1
+            
+            resolved_context = ResolvedContext.from_intent(
+                intent=intent,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                current_turn=current_turn
+            )
+            
+            # Store conversation history in context
+            if context and "conversation_history" in context:
+                resolved_context.layer_metadata["conversation_history"] = context["conversation_history"]
+            
+            print(f"✅ ResolvedContext created: {len(resolved_context.resolved_references)} refs, chain={resolved_context.selected_chain}")
+            
             # CHECK FOR CLARIFICATION NEEDED
             confidence = intent.get("confidence", "high")
             clarification = intent.get("clarification_needed")
@@ -1176,6 +1206,7 @@ RESPONSE RULES:
                 ),
                 metadata={
                     "intent": intent,
+                    "resolved_context": resolved_context.to_dict(),
                     "data_sources": list(retrieved_data.keys()),
                     "chain_selected": analysis.get("chain_selected", "Unknown"),
                     "chain_reasoning": analysis.get("chain_reasoning", "Not specified"),

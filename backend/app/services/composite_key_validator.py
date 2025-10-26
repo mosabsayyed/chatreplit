@@ -29,9 +29,13 @@ class CompositeKeyValidator:
                 composite_tables.add(table_name)
         return composite_tables
     
-    def validate_query(self, sql_json: Dict) -> Dict:
+    def validate_query(self, sql_json: Dict, expected_hops: int = None) -> Dict:
         """
         Validate SQL query for composite key compliance.
+        
+        Args:
+            sql_json: Dict with "sql" key containing the query
+            expected_hops: Optional expected hop count from chain selection
         
         Returns:
             {
@@ -43,6 +47,17 @@ class CompositeKeyValidator:
         sql = sql_json.get("sql", "")
         errors = []
         warnings = []
+        
+        # Check 0: JOIN count matches expected hops (if provided)
+        if expected_hops is not None:
+            joins = self._extract_joins(sql)
+            expected_join_count = expected_hops + 1  # N hops = N+1 JOINs
+            actual_join_count = len(joins)
+            if actual_join_count != expected_join_count:
+                errors.append(
+                    f"JOIN count mismatch: {expected_hops}-hop query requires {expected_join_count} JOINs, "
+                    f"but query has {actual_join_count} JOINs. Missing intermediate tables."
+                )
         
         # Check 1: JOIN clauses include year
         joins = self._extract_joins(sql)
