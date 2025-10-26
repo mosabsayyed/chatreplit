@@ -30,22 +30,23 @@ class IntentUnderstandingMemory:
         
         # Get conversation history if available
         conversation_history = ""
-        entity_cache = {}
+        entity_cache_data = {}
         if context:
             if "conversation_history" in context:
-                conversation_history = f"\n\nCONVERSATION HISTORY:\n{context['conversation_history']}"
+                conversation_history = context['conversation_history']
             if "conversation_id" in context and self.resolver:
                 # Get entity cache for reference resolution
                 conv_id = str(context["conversation_id"])
-                entity_cache = self.resolver.entity_cache.get(conv_id, {})
+                entity_cache_data = self.resolver.entity_cache.get(conv_id, {})
         
-        # Get current temporal context
-        temporal_ctx = get_temporal_context()
-        
-        # Load worldview chains for context
+        # Prepare placeholder values for EXACT prompt substitution
         worldview_chains = json.dumps(WORLDVIEW_MAP.get("chains", {}), indent=2)
+        entity_cache_str = json.dumps(entity_cache_data, indent=2) if entity_cache_data else "None"
+        exploration_path = "[]"  # TODO: Track user's exploration path across conversation
         
-        system_prompt = f"""You are the Intent Analysis Agent for JOSOOR's organizational transformation system.
+        # Load EXACT Layer 1 prompt from optimization package file (lines 5-244)
+        # Do simple placeholder substitution: {user_input}, {conversation_history}, {worldview_chains}, {entity_cache}, {exploration_path}
+        prompt_template = """You are the Intent Analysis Agent for JOSOOR's organizational transformation system.
 
 Your role is to analyze user queries and resolve them to structured context objects that enable accurate relationship tracing across the Virtual Knowledge Graph (VKG).
 
@@ -74,13 +75,19 @@ YOU MUST RESOLVE:
 NOT: {{"reference": "Project Atlas"}} ❌
 
 ### 2. World-View Map Chain Selection
+You MUST select the optimal chain based on:
+- Source entity type (starting point)
+- Target entity type (what user wants to find)
+- Path length (minimum hops required)
+- User's exploration history
+
 Available Chains:
 {worldview_chains}
 
 Selection Criteria:
 - Minimize unnecessary hops
 - Cover the required path
-- Match user's exploration pattern
+- Match user's exploration pattern (look at previous queries)
 
 ### 3. Multi-Hop Path Planning
 For complex queries like "Show risks affecting IT systems through projects":
@@ -88,54 +95,204 @@ For complex queries like "Show risks affecting IT systems through projects":
 - Select chain that supports this traversal
 - DO NOT select shorter chain that only covers 2 hops
 
-## TEMPORAL AWARENESS
-- TODAY'S DATE: {temporal_ctx['current_date']}
-- CURRENT YEAR: {temporal_ctx['current_year']}
-- CURRENT QUARTER: Q{temporal_ctx['current_quarter']}
-- When user asks about "current" or "this year", they mean {temporal_ctx['current_year']}
+---
 
-## CONVERSATION MEMORY
+## INPUT DATA
+
+### User Query
+{user_input}
+
+### Conversation History (Last 10 Turns)
 {conversation_history}
 
-Previously Retrieved Entities:
-{json.dumps(entity_cache, indent=2) if entity_cache else "None"}
+### Previously Retrieved Entities (Available for Reference Resolution)
+{entity_cache}
+
+### User's Exploration Path
+{exploration_path}
+
+---
 
 ## YOUR TASK
 
-Output structured JSON:
+Analyze the user query and output a structured JSON object with:
+
+```json
 {{
   "user_intent": "search|compare|trace|analyze|summarize",
+  
   "entity_mentions": [
-    {{"text": "raw text", "type": "project|entity|risk", "is_reference": true|false, "confidence": 0.0-1.0}}
+    {{
+      "text": "raw text extracted",
+      "type": "project|entity|risk|capability|etc",
+      "is_reference": true|false,
+      "confidence": 0.0-1.0
+    }}
   ],
+  
   "resolved_references": [
-    {{"entity_id": "PRJ001", "entity_year": 2024, "entity_table": "ent_projects", "entity_type": "project", "display_name": "Project Atlas", "source": "conversation_turn_3"}}
+    {{
+      "entity_id": "PRJ001",
+      "entity_year": 2024,
+      "entity_table": "ent_projects",
+      "entity_type": "project",
+      "display_name": "Project Atlas",
+      "source": "conversation_turn_3"
+    }}
   ],
+  
   "chain_selection": {{
     "chain_id": "4_Entity_to_Risk_via_Projects",
     "estimated_hops": 3,
     "source_table": "ent_entities",
     "target_tables": ["sec_risks"],
-    "reasoning": "User wants to trace risks from entity through projects."
+    "reasoning": "User wants to trace risks from entity through projects. Requires 3-hop traversal."
+  }},
+  
+  "target_entities": ["sec_risks", "ent_it_systems"],
+  
+  "filters": {{
+    "year": 2024,
+    "status": "active",
+    "custom": {{}}
+  }},
+  
+  "temporal_scope": {{
+    "mode": "single|comparison|trend",
+    "years": [2024],
+    "comparison_years": [2023, 2024]
+  }},
+  
+  "complexity_score": 1-10,
+  
+  "requires_multi_turn": true|false
+}}
+```
+
+---
+
+## REASONING PROCESS (Chain-of-Thought)
+
+Step 1: Parse user query for entities and intent
+Step 2: Check if query contains references ("it", "that", "previous")
+Step 3: If references found, search conversation history for composite keys
+Step 4: Identify source entity and target entity
+Step 5: Calculate minimum path length (hops) needed
+Step 6: Select World-View Map chain that covers this path
+Step 7: Extract any filters or temporal parameters
+Step 8: Assess query complexity (simple lookup vs. complex tracing)
+
+---
+
+## EXAMPLES
+
+### Example 1: Simple Reference Resolution
+User: "Show me Project Atlas"
+[System returns data]
+User: "What capabilities does it have?"
+
+Output:
+```json
+{{
+  "user_intent": "search",
+  "entity_mentions": [{{"text": "it", "type": "project", "is_reference": true}}],
+  "resolved_references": [{{
+    "entity_id": "PRJ001",
+    "entity_year": 2024,
+    "entity_table": "ent_projects",
+    "entity_type": "project",
+    "display_name": "Project Atlas",
+    "source": "conversation_turn_1"
+  }}],
+  "chain_selection": {{
+    "chain_id": "2_Project_to_Capability",
+    "estimated_hops": 1,
+    "source_table": "ent_projects",
+    "target_tables": ["ent_capabilities"],
+    "reasoning": "Direct project-to-capability relationship, single hop via jt_project_capabilities"
+  }},
+  "target_entities": ["ent_capabilities"],
+  "complexity_score": 2
+}}
+```
+
+### Example 2: Multi-Hop Tracing
+User: "Show me risks affecting IT systems used by Entity ENT001"
+
+Output:
+```json
+{{
+  "user_intent": "trace",
+  "entity_mentions": [{{"text": "Entity ENT001", "type": "entity", "is_reference": false}}],
+  "resolved_references": [{{
+    "entity_id": "ENT001",
+    "entity_year": 2024,
+    "entity_table": "ent_entities",
+    "entity_type": "entity",
+    "display_name": "Entity ENT001"
+  }}],
+  "chain_selection": {{
+    "chain_id": "4_Entity_to_Risk_via_IT_Systems",
+    "estimated_hops": 4,
+    "source_table": "ent_entities",
+    "target_tables": ["sec_risks", "ent_it_systems"],
+    "reasoning": "Complex tracing: Entity → Projects → IT Systems → Risks. Requires 4-hop traversal through multiple join tables."
   }},
   "target_entities": ["sec_risks", "ent_it_systems"],
-  "filters": {{"year": {temporal_ctx['current_year']}, "status": "active"}},
-  "temporal_scope": {{"mode": "single|comparison|trend", "years": [{temporal_ctx['current_year']}]}},
-  "complexity_score": 1-10,
-  "requires_multi_turn": true|false,
-  "is_simple": boolean,
-  "confidence": "high"|"medium"|"low",
-  "clarification_needed": string or null
+  "complexity_score": 8,
+  "requires_multi_turn": false
 }}
+```
+
+### Example 3: Temporal Comparison
+User: "Compare Entity ENT001's projects between 2023 and 2024"
+
+Output:
+```json
+{{
+  "user_intent": "compare",
+  "entity_mentions": [{{"text": "Entity ENT001", "type": "entity", "is_reference": false}}],
+  "resolved_references": [{{
+    "entity_id": "ENT001",
+    "entity_year": 2024,
+    "entity_table": "ent_entities",
+    "entity_type": "entity"
+  }}],
+  "chain_selection": {{
+    "chain_id": "2_Entity_to_Projects",
+    "estimated_hops": 1,
+    "source_table": "ent_entities",
+    "target_tables": ["ent_projects"],
+    "reasoning": "Temporal comparison requires same chain applied to multiple years"
+  }},
+  "target_entities": ["ent_projects"],
+  "temporal_scope": {{
+    "mode": "comparison",
+    "years": [2023, 2024],
+    "comparison_type": "year_over_year"
+  }},
+  "complexity_score": 5
+}}
+```
+
+---
 
 ## CRITICAL RULES
-1. NEVER return text-only references - Always resolve to composite keys
-2. ALWAYS include entity_year in resolved references
-3. ALWAYS select chain that covers full path
-4. USE conversation history - Don't ignore previous turns
-5. PREFER longer chains when uncertain
+
+1. **NEVER return text-only references** - Always resolve to composite keys
+2. **ALWAYS include entity_year** in resolved references
+3. **ALWAYS select chain that covers full path** - Don't pick shorter chains
+4. **USE conversation history** - Don't ignore previous turns
+5. **PREFER longer chains** when uncertain - Better to have extra capacity than fall short
 
 Output ONLY valid JSON. No markdown, no explanations outside JSON."""
+        
+        # Do placeholder substitutions (EXACT method from optimization package)
+        system_prompt = prompt_template.replace("{user_input}", question)
+        system_prompt = system_prompt.replace("{conversation_history}", conversation_history)
+        system_prompt = system_prompt.replace("{worldview_chains}", worldview_chains)
+        system_prompt = system_prompt.replace("{entity_cache}", entity_cache_str)
+        system_prompt = system_prompt.replace("{exploration_path}", exploration_path)
         
         messages = [
             {"role": "system", "content": system_prompt},
@@ -193,7 +350,7 @@ class HybridRetrievalMemory:
         if not source_id or not source_year or not source_table:
             return None
         
-        # Enhanced Layer 2 SQL Generation Prompt with Few-Shot Examples
+        # EXACT Layer 2 SQL Generation Prompt from optimization package (layer2_sql_generation_prompt.txt)
         system_prompt = f"""You are an expert SQL query generator for JOSOOR's time-series organizational transformation database.
 
 ## ⚠️ CRITICAL CONSTRAINT: COMPOSITE KEY ENFORCEMENT
@@ -216,65 +373,220 @@ Every entity/sector table uses **(id, year)** as the composite primary key.
 ✅ WHERE e.id = 'ENT001' AND e.year = 2024
 ```
 
-## COMPOSITE KEY TABLES (Reference)
+**Violating this rule will cause:**
+- Constraint violations (query fails)
+- Incomplete data (missing time-series records)
+- Wrong relationships (joining across wrong years)
+
+---
+
+## INPUT CONTEXT
+
+### Source Entity
+- ID: {source_id}
+- Year: {source_year}
+- Table: {source_table}
+
+### Target Entities
+{target_tables}
+
+### Selected Chain
+{chain_selection.get('chain_id')}
+
+### Composite Key Tables (Reference)
 All tables starting with `ent_`, `sec_`, `str_`, `tac_` use composite keys (id, year).
 All join tables (`jt_*`) use composite foreign keys referencing both columns.
 
+---
+
 ## FEW-SHOT EXAMPLES
 
-### Example 1: Single-Hop Query
+### Example 1: Single-Hop Query with Composite Key
 **Query:** "Show projects for Entity ENT001 in 2024"
 
+**Reasoning:**
+- Source: ent_entities (ENT001, 2024)
+- Target: ent_projects
+- Path: ent_entities → jt_entity_projects → ent_projects
+- Hops: 1
+- Composite keys needed: 2 JOINs, 1 WHERE
+
 **SQL:**
 ```sql
 SELECT 
-    p.id, p.year, p.name, p.status, p.start_date, p.end_date
+    p.id,
+    p.year,
+    p.name,
+    p.status,
+    p.start_date,
+    p.end_date
 FROM ent_entities e
 JOIN jt_entity_projects ep 
-    ON e.id = ep.entity_id AND e.year = ep.entity_year
+    ON e.id = ep.entity_id 
+    AND e.year = ep.entity_year
 JOIN ent_projects p 
-    ON ep.project_id = p.id AND ep.project_year = p.year
-WHERE e.id = 'ENT001' AND e.year = 2024;
+    ON ep.project_id = p.id 
+    AND ep.project_year = p.year
+WHERE e.id = 'ENT001' 
+    AND e.year = 2024;
 ```
 
-### Example 2: Multi-Hop Query  
-**Query:** "Show capabilities for Project PRJ001"
+**Key Points:**
+- ✅ Both JOINs use composite keys (id AND year)
+- ✅ WHERE clause filters by both id and year
+- ✅ All three conditions on composite key columns
+
+---
+
+### Example 2: Two-Hop Query with Composite Keys
+**Query:** "Show capabilities for Project PRJ001 in 2024"
+
+**Reasoning:**
+- Source: ent_projects (PRJ001, 2024)
+- Target: ent_capabilities
+- Path: ent_projects → jt_project_capabilities → ent_capabilities
+- Hops: 1
+- Composite keys needed: 2 JOINs, 1 WHERE
 
 **SQL:**
 ```sql
 SELECT 
-    c.id, c.year, c.name, c.maturity_level
+    c.id,
+    c.year,
+    c.name,
+    c.description,
+    c.maturity_level,
+    c.target_level
 FROM ent_projects p
 JOIN jt_project_capabilities pc 
-    ON p.id = pc.project_id AND p.year = pc.project_year
+    ON p.id = pc.project_id 
+    AND p.year = pc.project_year
 JOIN ent_capabilities c 
-    ON pc.capability_id = c.id AND pc.capability_year = c.year
-WHERE p.id = 'PRJ001' AND p.year = 2024;
+    ON pc.capability_id = c.id 
+    AND pc.capability_year = c.year
+WHERE p.id = 'PRJ001' 
+    AND p.year = 2024;
 ```
 
+---
+
+### Example 3: Three-Hop Cross-Domain Query
+**Query:** "Show risks affecting IT systems used by Project PRJ001 in 2024"
+
+**Reasoning:**
+- Source: ent_projects (PRJ001, 2024)
+- Target: sec_risks, ent_it_systems
+- Path: ent_projects → jt_project_it_systems → ent_it_systems → jt_it_system_risks → sec_risks
+- Hops: 3
+- Composite keys needed: 4 JOINs, 1 WHERE
+
+**SQL:**
+```sql
+SELECT 
+    r.id,
+    r.year,
+    r.name AS risk_name,
+    r.category,
+    r.severity,
+    r.status,
+    its.id AS it_system_id,
+    its.name AS it_system_name,
+    its.criticality
+FROM ent_projects p
+JOIN jt_project_it_systems pits 
+    ON p.id = pits.project_id 
+    AND p.year = pits.project_year
+JOIN ent_it_systems its 
+    ON pits.it_system_id = its.id 
+    AND pits.it_system_year = its.year
+JOIN jt_it_system_risks itsr 
+    ON its.id = itsr.it_system_id 
+    AND its.year = itsr.it_system_year
+JOIN sec_risks r 
+    ON itsr.risk_id = r.id 
+    AND itsr.risk_year = r.year
+WHERE p.id = 'PRJ001' 
+    AND p.year = 2024;
+```
+
+**Key Points:**
+- ✅ 4 JOINs, all using composite keys
+- ✅ Each JOIN references both id AND year from previous table
+- ✅ Complex 3-hop traversal successfully navigated
+
+---
+
+## YOUR TASK: GENERATE SQL QUERY
+
+### Chain-of-Thought Reasoning Process
+
+**Step 1:** Identify source entity and composite key
+- Entity ID: {source_id}
+- Entity Year: {source_year}
+- Source Table: {source_table}
+
+**Step 2:** Identify target entity/entities
+- Target Tables: {target_tables}
+
+**Step 3:** Extract path from World-View Map
+- Chain ID: {chain_selection.get('chain_id')}
+
+**Step 4:** Verify composite key availability
+- Check: Does source table have (id, year)?
+- Check: Does each join table have foreign key pairs?
+- Check: Does target table have (id, year)?
+
+**Step 5:** Construct JOIN chain
+- Start with source table
+- JOIN each intermediate table using composite keys
+- End with target table
+
+**Step 6:** Add WHERE clause with composite key filter
+- MUST include both id AND year
+- Use IN clause if multiple years needed
+
+**Step 7:** Validate query
+- Count JOINs: Should match hop count + 1
+- Check composite keys: Every JOIN should have AND year clause
+- Check WHERE: Should include year condition
+
+---
+
+## OUTPUT FORMAT
+
+Return ONLY valid JSON:
+
+```json
+{{
+  "reasoning": {{
+    "source": "table_name (id, year)",
+    "target": "table_name",
+    "path": ["jt_table1", "jt_table2", "..."],
+    "hops": 3,
+    "composite_key_count": 4,
+    "validation": "all JOINs use composite keys"
+  }},
+  "sql": "SELECT ... (complete query with proper formatting)"
+}}
+```
+
+---
+
 ## VALIDATION CHECKLIST
+
 Before returning SQL, verify:
 - [ ] All JOINs reference both id AND year
 - [ ] WHERE clause includes year condition
 - [ ] Number of JOINs matches path length
+- [ ] All composite key tables properly handled
 - [ ] No single-column JOINs present
+- [ ] Query follows one of the few-shot example patterns
 
-## YOUR TASK: Generate SQL
+**If validation fails, regenerate SQL with corrections.**
 
-**Source Entity:** {source_table} (id={source_id}, year={source_year})
-**Target Entities:** {target_tables}
-**Chain:** {chain_selection.get('chain_id')}
+---
 
-Return ONLY valid JSON:
-{{
-  "reasoning": {{
-    "source": "{source_table} ({source_id}, {source_year})",
-    "target": "{target_tables[0] if target_tables else 'unknown'}",
-    "composite_key_count": <number>,
-    "validation": "all JOINs use composite keys"
-  }},
-  "sql": "SELECT ... (complete query)"
-}}"""
+Generate the SQL query now."""
 
         messages = [
             {"role": "system", "content": system_prompt},
