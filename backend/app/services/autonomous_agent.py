@@ -4,6 +4,7 @@ from app.db.postgres_client import postgres_client
 from app.models.schemas import AgentResponse, Visualization, ConfidenceInfo
 from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_YEAR
 from app.services.composite_key_resolver import CompositeKeyResolver, CompositeKeyEntity
+from app.services.composite_key_validator import CompositeKeyValidator
 import json
 import base64
 import io
@@ -331,6 +332,13 @@ Output ONLY valid JSON. No markdown, no explanations outside JSON."""
 
 class HybridRetrievalMemory:
     """Layer 2: Retrieve relevant data from PostgreSQL + Knowledge Graph with composite key SQL generation"""
+    
+    def __init__(self):
+        """Initialize Layer 2 with CompositeKeyValidator"""
+        schema_path = Path(__file__).parent.parent / "config" / "schema_definition.json"
+        with open(schema_path, 'r') as f:
+            schema = json.load(f)
+        self.validator = CompositeKeyValidator(schema)
     
     async def generate_sql_with_composite_keys(self, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Generate SQL query with MANDATORY composite key enforcement"""
@@ -689,24 +697,60 @@ Generate the SQL query now."""
             {"role": "user", "content": "Generate the SQL query now with composite key compliance."}
         ]
         
-        try:
-            response = await llm_provider.chat_completion(messages, temperature=0.2, max_tokens=1500)
-            
-            # Parse SQL response
-            cleaned = response.strip()
-            if cleaned.startswith("```json"):
-                cleaned = cleaned[7:]
-            if cleaned.startswith("```"):
-                cleaned = cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
-            
-            sql_response = json.loads(cleaned)
-            return sql_response
-        except Exception as e:
-            print(f"⚠️ SQL generation failed: {e}")
-            return None
+        # Retry up to 3 times with validation feedback
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = await llm_provider.chat_completion(messages, temperature=0.2, max_tokens=1500)
+                
+                # Parse SQL response
+                cleaned = response.strip()
+                if cleaned.startswith("```json"):
+                    cleaned = cleaned[7:]
+                if cleaned.startswith("```"):
+                    cleaned = cleaned[3:]
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3]
+                cleaned = cleaned.strip()
+                
+                sql_response = json.loads(cleaned)
+                
+                # VALIDATION: Check composite key compliance
+                validation_result = self.validator.validate_query(sql_response)
+                
+                if validation_result["valid"]:
+                    print(f"✅ SQL validated successfully on attempt {attempt + 1}")
+                    if validation_result["warnings"]:
+                        print(f"⚠️  Warnings: {validation_result['warnings']}")
+                    return sql_response
+                else:
+                    print(f"❌ SQL validation failed on attempt {attempt + 1}")
+                    print(f"   Errors: {validation_result['errors']}")
+                    
+                    if attempt < max_retries - 1:
+                        # Provide validation feedback for retry
+                        error_feedback = "\n".join([
+                            f"VALIDATION ERROR {i+1}: {err}" 
+                            for i, err in enumerate(validation_result['errors'])
+                        ])
+                        messages.append({
+                            "role": "assistant",
+                            "content": json.dumps(sql_response, indent=2)
+                        })
+                        messages.append({
+                            "role": "user",
+                            "content": f"The SQL query has composite key violations. Please fix these errors:\n\n{error_feedback}\n\nRegenerate the SQL query with these issues corrected."
+                        })
+                    else:
+                        print(f"⚠️  Max retries reached. Returning invalid SQL (will fallback to hardcoded queries).")
+                        return None
+                        
+            except Exception as e:
+                print(f"⚠️ SQL generation failed on attempt {attempt + 1}: {e}")
+                if attempt == max_retries - 1:
+                    return None
+        
+        return None
     
     async def process(self, intent: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve data from structured tables and knowledge graph"""
