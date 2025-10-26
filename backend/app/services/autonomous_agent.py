@@ -516,6 +516,102 @@ WHERE p.id = 'PRJ001'
 
 ---
 
+### Example 4: Temporal Comparison (Multi-Year)
+**Query:** "Compare Entity ENT001 projects between 2023 and 2024"
+
+**Reasoning:**
+- Source: ent_entities (ENT001) - multiple years
+- Target: ent_projects aggregated by year
+- Path: Same as Example 1, but with year aggregation
+- Special case: WHERE uses IN clause for multiple years
+
+**SQL:**
+```sql
+SELECT 
+    p.year,
+    COUNT(*) as project_count,
+    json_agg(
+        json_build_object(
+            'id', p.id, 
+            'name', p.name,
+            'status', p.status
+        )
+    ) as projects
+FROM ent_entities e
+JOIN jt_entity_projects ep 
+    ON e.id = ep.entity_id 
+    AND e.year = ep.entity_year
+JOIN ent_projects p 
+    ON ep.project_id = p.id 
+    AND ep.project_year = p.year
+WHERE e.id = 'ENT001' 
+    AND e.year IN (2023, 2024)
+GROUP BY p.year
+ORDER BY p.year;
+```
+
+**Key Points:**
+- ✅ Composite keys maintained across years
+- ✅ WHERE uses IN clause for multiple years (still includes year)
+- ✅ GROUP BY year for comparison view
+
+---
+
+### Example 5: Four-Hop Complex Traversal
+**Query:** "Trace tactics to operational risks through projects and capabilities for Strategy STR001"
+
+**Reasoning:**
+- Source: str_strategies (STR001, 2024)
+- Target: sec_risks
+- Path: str_strategies → jt_strategy_tactics → tac_tactics → jt_tactic_projects → ent_projects → jt_project_capabilities → ent_capabilities → jt_capability_risks → sec_risks
+- Hops: 5 (complex cross-domain traversal)
+
+**SQL:**
+```sql
+SELECT 
+    s.name AS strategy_name,
+    t.name AS tactic_name,
+    p.name AS project_name,
+    c.name AS capability_name,
+    r.name AS risk_name,
+    r.severity,
+    r.status
+FROM str_strategies s
+JOIN jt_strategy_tactics st 
+    ON s.id = st.strategy_id 
+    AND s.year = st.strategy_year
+JOIN tac_tactics t 
+    ON st.tactic_id = t.id 
+    AND st.tactic_year = t.year
+JOIN jt_tactic_projects tp 
+    ON t.id = tp.tactic_id 
+    AND t.year = tp.tactic_year
+JOIN ent_projects p 
+    ON tp.project_id = p.id 
+    AND tp.project_year = p.year
+JOIN jt_project_capabilities pc 
+    ON p.id = pc.project_id 
+    AND p.year = pc.project_year
+JOIN ent_capabilities c 
+    ON pc.capability_id = c.id 
+    AND pc.capability_year = c.year
+JOIN jt_capability_risks cr 
+    ON c.id = cr.capability_id 
+    AND c.year = cr.capability_year
+JOIN sec_risks r 
+    ON cr.risk_id = r.id 
+    AND cr.risk_year = r.year
+WHERE s.id = 'STR001' 
+    AND s.year = 2024;
+```
+
+**Key Points:**
+- ✅ 8 JOINs, all using composite keys
+- ✅ Successfully traces through 5 hops across 4 domains
+- ✅ Demonstrates full VKG traversal capability
+
+---
+
 ## YOUR TASK: GENERATE SQL QUERY
 
 ### Chain-of-Thought Reasoning Process
