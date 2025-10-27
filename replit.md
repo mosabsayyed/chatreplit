@@ -93,6 +93,42 @@ User Query → Single LLM with Function Calling
 - Real-time responses from autonomous agent
 - Visualization rendering (base64 encoded images)
 
+### Canvas Workspace (NEW) ✅
+**3-Mode Responsive Layout** - Transforms chat into enterprise workspace with branded artifacts
+
+**Modes:**
+1. **Hidden** (default): Full chat experience
+2. **Collapsed (25%)**: Canvas sidebar with artifact list, chat takes 75%
+3. **Expanded (70%)**: Full canvas workspace, chat shrinks to 30%
+4. **Fullscreen (100%)**: Canvas takes over entire screen for presentations
+
+**Architecture:**
+- `frontend/css/canvas.css` (295 lines): Complete 3-mode layout system
+- `frontend/js/canvas-manager.js` (322 lines): CanvasManager class handles mode switching, artifact routing
+- `frontend/js/chart-renderer.js` (439 lines): ChartRenderer with Highcharts integration
+
+**Features:**
+- ✅ Smooth CSS transitions between modes
+- ✅ Artifact type routing (CHART, REPORT, TABLE, DOCUMENT)
+- ✅ Recent artifacts sidebar with type badges
+- ✅ Auto-open canvas when artifact created
+- ✅ Mobile responsive (canvas hidden <768px)
+- ✅ Loading states and error handling
+- ✅ Empty state placeholders
+
+**ChartRenderer (Completed):**
+- **6 Chart Types**: Spider/Radar, Bubble, Bullet, Column, Line, Combo
+- **Highcharts Integration**: Promise-based async loading (core + more + exporting + bullet modules)
+- **Export**: PNG/SVG download via Highcharts export module
+- **Idempotent Loading**: Cached promise prevents duplicate script injection
+- **DOM Isolation**: Unique container IDs per render, coexists with other renderers
+- **Testing**: `canvasManager.createSampleChart()` in browser console
+
+**Pending Renderers:**
+- ReportRenderer: Multi-section reports with branding, embedded charts
+- TableRenderer: Sortable tables with filters
+- DocumentRenderer: Rich text markdown rendering
+
 ## API Endpoints
 
 ### Agent Endpoint
