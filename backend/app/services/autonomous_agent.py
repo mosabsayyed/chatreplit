@@ -922,52 +922,49 @@ Generate the SQL query now."""
         retrieved_data = {}
         
         # Query structured entity tables with correct column names
-        if "ent_projects" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view", "general_question"]:
-            query = """
-                SELECT id, year, quarter, name, status, progress_percentage, 
-                       budget, start_date, end_date, level
-                FROM ent_projects 
-                WHERE year = $1
-                ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
-                LIMIT 20
-            """
-            
-            # RAW DEBUG LOGGING - Fallback SQL
-            log_debug(2, "fallback_sql_projects", {
-                "query": query,
-                "params": [year],
-                "warning": "HARDCODED LIMIT 20 - This may be causing data truncation!"
-            })
-            
-            projects = await postgres_client.execute_query(query, [year])
-            retrieved_data["projects"] = projects
-            
-            # RAW DEBUG LOGGING - Fallback SQL Results
-            log_debug(2, "fallback_sql_results_projects", {
-                "row_count": len(projects) if projects else 0,
-                "full_results": projects
-            })
+        # ALWAYS query projects for fallback (don't rely on entity mentions or intent_type)
+        query = """
+            SELECT id, year, quarter, name, status, progress_percentage, 
+                   budget, start_date, end_date, level
+            FROM ent_projects 
+            WHERE year = $1
+            ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
+        """
         
-        if "ent_capabilities" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view"]:
-            query = """
-                SELECT id, year, name, maturity_level, status, level
-                FROM ent_capabilities 
-                WHERE year = $1
-                ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
-                LIMIT 20
-            """
-            capabilities = await postgres_client.execute_query(query, [year])
-            retrieved_data["capabilities"] = capabilities
+        # RAW DEBUG LOGGING - Fallback SQL
+        log_debug(2, "fallback_sql_projects", {
+            "query": query,
+            "params": [year],
+            "warning": "NO LIMIT - Returning ALL projects for the year"
+        })
         
-        if "sec_objectives" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view"]:
-            query = """
-                SELECT id, year, name, level, status, expected_outcomes, priority_level
-                FROM sec_objectives 
-                WHERE year = $1
-                LIMIT 20
-            """
-            objectives = await postgres_client.execute_query(query, [year])
-            retrieved_data["objectives"] = objectives
+        projects = await postgres_client.execute_query(query, [year])
+        retrieved_data["projects"] = projects
+        
+        # RAW DEBUG LOGGING - Fallback SQL Results
+        log_debug(2, "fallback_sql_results_projects", {
+            "row_count": len(projects) if projects else 0,
+            "full_results": projects
+        })
+        
+        # ALWAYS query capabilities for fallback
+        query = """
+            SELECT id, year, name, maturity_level, status, level
+            FROM ent_capabilities 
+            WHERE year = $1
+            ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
+        """
+        capabilities = await postgres_client.execute_query(query, [year])
+        retrieved_data["capabilities"] = capabilities
+        
+        # ALWAYS query objectives for fallback
+        query = """
+            SELECT id, year, name, level, status, expected_outcomes, priority_level
+            FROM sec_objectives 
+            WHERE year = $1
+        """
+        objectives = await postgres_client.execute_query(query, [year])
+        retrieved_data["objectives"] = objectives
         
         # Query knowledge graph for rich relationships and context
         try:
