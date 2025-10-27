@@ -1,0 +1,192 @@
+Optimized Agent memory
+
+Planning frontend architecture approach (17 seconds)
+I see the canvas backend documentation! This is a comprehensive system. Let me quickly check your current frontend setup to align the canvas frontend plan with your existing tech stack.
+
+
+Planned frontend architecture and approach (5 seconds)
+Perfect! I can see your current setup and the canvas backend requirements. Let me propose a Canvas Frontend Plan based on your existing vanilla HTML/CSS/JS approach and the comprehensive backend you have.
+
+📊 Canvas Frontend - My Analysis
+Current State:
+✅ Backend: Fully specified (104KB, 3,347 lines, 20+ endpoints)
+✅ Frontend Chat: Vanilla HTML/CSS/JS with marked.js + DOMPurify
+⏳ Canvas UI: Not yet built
+Key Requirements from Backend:
+3 Layout Modes: Chat-dominant (75/25) → Canvas-expanded (30/70) → Fullscreen (100%)
+7 Artifact Types: REPORT, CHART, CONTENT_NAVIGATOR, DOCUMENT, TABLE, PRESENTATION, FORM
+TwinScience Navigator: 64-piece content system (4 chapters × 4 episodes × 4 types)
+Export Flow: Direct PDF/DOCX download (no preview)
+Branding: Apply colors, fonts, logo from brand kit
+Version Control: Display version history, restore versions
+Progress Tracking: Resume video/audio, completion checkmarks
+🎯 DECISION POINT: Tech Stack
+I see two paths forward:
+
+Option A: Vanilla JS (Stay Simple) ✅ RECOMMENDED
+Pros:
+
+Matches your current approach
+No build system needed
+Fast to implement
+Lightweight bundle
+Easy to maintain
+Cons:
+
+More manual DOM manipulation
+State management gets complex with canvas workspace
+Harder to componentize
+Best For: MVP, rapid iteration, keeping it simple
+
+Option B: Upgrade to React/Vue
+Pros:
+
+Better component reuse
+Easier state management
+Rich ecosystem (chart libraries, UI components)
+Better for complex interactions
+Cons:
+
+Requires build system (Vite/Webpack)
+Steeper learning curve
+Larger bundle size
+More setup time
+Best For: Long-term scalability, team collaboration
+
+💡 My Recommendation: Start with Vanilla JS + Upgrade Path
+Here's why:
+
+Your chat already works in vanilla JS - keep consistency
+Canvas can be modular - create separate JS files for each artifact type
+Highcharts works great with vanilla JS (already used in backend spec)
+Modal overlays are simple with CSS + vanilla JS
+You can migrate later to React if needed (backend API stays the same)
+🏗️ Proposed Architecture (Vanilla JS)
+frontend/
+├── index.html                    # Main chat + canvas layout
+├── css/
+│   ├── chat.css                 # Existing chat styles
+│   ├── canvas.css               # NEW: Canvas workspace styles
+│   ├── artifacts.css            # NEW: Artifact renderers
+│   └── twinscience.css          # NEW: TwinScience navigator
+├── js/
+│   ├── chat.js                  # Existing chat logic
+│   ├── canvas-manager.js        # NEW: Layout mode switching
+│   ├── artifacts/
+│   │   ├── report-renderer.js   # Render REPORT artifacts
+│   │   ├── chart-renderer.js    # Render CHART artifacts
+│   │   ├── table-renderer.js    # Render TABLE artifacts
+│   │   └── document-renderer.js # Render DOCUMENT artifacts
+│   ├── twinscience/
+│   │   ├── navigator.js         # Chapter/episode tree
+│   │   ├── modal.js             # Content modal overlay
+│   │   └── progress.js          # Progress tracking
+│   ├── export-handler.js        # Export button logic
+│   └── api-client.js            # NEW: Canvas API calls
+└── lib/
+    ├── marked.min.js            # Existing markdown
+    ├── dompurify.min.js         # Existing sanitizer
+    └── highcharts.js            # NEW: Charts library
+🎨 UI Layout Design
+Mode 1: Chat-Dominant (75/25) - Default
+┌────────────────────────────────────────────────┐
+│  Header: JOSOOR | [Canvas Toggle]             │
+├──────────────────────────────┬─────────────────┤
+│                              │                 │
+│  Chat Messages (75%)         │  Canvas         │
+│                              │  Collapsed      │
+│  • User queries              │  (25%)          │
+│  • Agent responses           │                 │
+│  • "📊 Created report →"     │  [Recent        │
+│                              │   Artifacts]    │
+│  [Input box]                 │                 │
+└──────────────────────────────┴─────────────────┘
+Mode 2: Canvas-Expanded (30/70) - Working Mode
+┌────────────────────────────────────────────────┐
+│  Header: JOSOOR | [✕ Close Canvas]            │
+├──────────┬─────────────────────────────────────┤
+│          │                                     │
+│  Chat    │  Canvas Workspace (70%)             │
+│  (30%)   │                                     │
+│          │  [Report Title]                     │
+│  Sidebar │  ┌──────────────────────────────┐  │
+│          │  │ Executive Summary            │  │
+│  Recent  │  │ • Metric 1                   │  │
+│  convs   │  │ • Metric 2                   │  │
+│          │  └──────────────────────────────┘  │
+│          │  [Chart: Highcharts embedded]      │
+│          │                                     │
+│          │  [Export: PDF | DOCX]               │
+└──────────┴─────────────────────────────────────┘
+Mode 3: Fullscreen (100%) - Presentation Mode
+┌────────────────────────────────────────────────┐
+│  [← Back to Chat]          [Export: PDF DOCX] │
+├────────────────────────────────────────────────┤
+│                                                │
+│  Full Canvas (100%)                            │
+│                                                │
+│  [Artifact content fills entire screen]        │
+│                                                │
+│  • Reports rendered formally                   │
+│  • Charts at full resolution                   │
+│  • TwinScience with modal overlays             │
+│                                                │
+└────────────────────────────────────────────────┘
+🧩 Key Components to Build
+1. CanvasManager (Layout Switching)
+// js/canvas-manager.js
+class CanvasManager {
+    constructor() {
+        this.currentMode = 'chat-dominant'; // chat-dominant | canvas-expanded | fullscreen
+        this.currentArtifact = null;
+    }
+    
+    toggleCanvas() {
+        // Cycle: chat-dominant → canvas-expanded → fullscreen → chat-dominant
+    }
+    
+    loadArtifact(artifactId) {
+        // Fetch artifact from API
+        // Render based on artifact_type
+    }
+    
+    applyBranding(brandKit) {
+        // Apply colors, fonts, logo from brand kit
+    }
+}
+2. Artifact Renderers
+Each artifact type needs a renderer:
+
+ReportRenderer: Multi-section formal reports with branding
+ChartRenderer: Highcharts integration
+TableRenderer: Sortable tables with filters
+DocumentRenderer: Rich text markdown
+3. TwinScience Navigator
+TreeView: Collapsible chapter/episode structure
+ContentCards: 4 cards shown simultaneously (article, podcast, video, study guide)
+ModalOverlay: 70% width, 90% height for articles/study guides
+InlinePlayer: HTML5 audio/video with resume capability
+ProgressIndicator: ✓ Completed, ◐ In Progress, ○ Not Started
+4. Export Handler
+Export buttons trigger direct download
+Show loading spinner (2-3 seconds)
+Toast notification when ready
+Browser downloads PDF/DOCX automatically
+📋 Implementation Sequence
+Would you like me to create a detailed task list for implementing this? The sequence would be:
+
+Canvas Layout - Create 3-mode switching system
+Artifact Renderers - Build report/chart/table/document renderers
+TwinScience Navigator - Implement content tree + modal
+Export Integration - Connect PDF/DOCX export buttons
+Branding System - Apply brand kit (colors, fonts, logo)
+Progress Tracking - Add resume capability for media
+Testing & Polish - Mobile responsiveness, error handling
+Estimated Time: 1-2 weeks (if vanilla JS), 2-3 weeks (if React)
+
+❓ Questions for You:
+Tech Stack: Should I stick with vanilla JS (faster, simpler) or plan for React (more scalable)?
+Priority: Which artifact type should we build first? (REPORT is most complex, CHART is simplest)
+TwinScience Content: Do you have the 64 content pieces ready, or should I plan placeholder content?
+Branding: Do you have a brand kit (colors, logo) ready, or should I use defaults?
+Let me know your preferences, and I'll create the detailed task list to get started! 🚀
