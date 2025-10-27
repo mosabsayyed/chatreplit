@@ -14,7 +14,8 @@ class SchemaEmbedder:
     
     def __init__(self):
         self.embedding_service = get_embedding_service()
-        self.schema_path = "backend/app/config/schema_definition.json"
+        from .schema_loader import SchemaLoader
+        self.schema_loader = SchemaLoader()
     
     def get_db_connection(self):
         """Get database connection"""
@@ -23,9 +24,8 @@ class SchemaEmbedder:
         return conn
     
     def load_schema_definition(self) -> Dict[str, Any]:
-        """Load schema definition from JSON file"""
-        with open(self.schema_path, 'r') as f:
-            return json.load(f)
+        """Load schema definition using SchemaLoader"""
+        return self.schema_loader.load_schema()
     
     def extract_schema_descriptions(self) -> List[Dict[str, Any]]:
         """
@@ -37,63 +37,48 @@ class SchemaEmbedder:
         schema_def = self.load_schema_definition()
         descriptions = []
         
-        # Extract entity tables
-        for table_name, table_info in schema_def.get("entity_tables", {}).items():
+        # Process all tables from schema loader
+        for table_name, table_info in schema_def.items():
+            columns = table_info.get("columns", [])
+            primary_key = table_info.get("primary_key", [])
+            
+            # Get column names
+            column_names = [col["name"] for col in columns]
+            
+            # Determine table type
+            if table_name.startswith("ent_"):
+                table_type = "entity_table"
+                domain = "enterprise"
+            elif table_name.startswith("sec_"):
+                table_type = "entity_table"
+                domain = "sector"
+            elif table_name.startswith("jt_"):
+                table_type = "join_table"
+                domain = "relationship"
+            elif table_name.startswith("kg_"):
+                table_type = "knowledge_graph"
+                domain = "graph"
+            else:
+                table_type = "support_table"
+                domain = "system"
+            
+            # Build description
             desc_parts = [
                 f"Table: {table_name}",
-                f"Description: {table_info.get('description', '')}",
-                f"Columns: {', '.join(table_info.get('columns', []))}",
-                f"Domain: {table_info.get('domain', '')}"
+                f"Type: {table_type}",
+                f"Primary Key: {', '.join(primary_key)}",
+                f"Columns: {', '.join(column_names)}"
             ]
             
             descriptions.append({
                 "table_name": table_name,
                 "description": " | ".join(desc_parts),
                 "metadata": {
-                    "type": "entity_table",
-                    "domain": table_info.get("domain"),
-                    "columns": table_info.get("columns", []),
-                    "has_composite_key": True
-                }
-            })
-        
-        # Extract join tables
-        for table_name, table_info in schema_def.get("join_tables", {}).items():
-            desc_parts = [
-                f"Join Table: {table_name}",
-                f"Connects: {table_info.get('description', '')}",
-                f"Columns: {', '.join(table_info.get('columns', []))}"
-            ]
-            
-            descriptions.append({
-                "table_name": table_name,
-                "description": " | ".join(desc_parts),
-                "metadata": {
-                    "type": "join_table",
-                    "columns": table_info.get("columns", []),
-                    "connects": table_info.get("connects", [])
-                }
-            })
-        
-        # Extract worldview chains
-        for chain in schema_def.get("worldview", {}).get("relationship_chains", []):
-            desc_parts = [
-                f"Relationship Chain: {chain.get('chain_id')}",
-                f"Path: {' -> '.join(chain.get('path', []))}",
-                f"Use Case: {chain.get('description', '')}",
-                f"Hops: {chain.get('hops', 0)}"
-            ]
-            
-            descriptions.append({
-                "table_name": f"chain_{chain.get('chain_id')}",
-                "description": " | ".join(desc_parts),
-                "metadata": {
-                    "type": "relationship_chain",
-                    "chain_id": chain.get("chain_id"),
-                    "path": chain.get("path", []),
-                    "hops": chain.get("hops", 0),
-                    "source": chain.get("source"),
-                    "target": chain.get("target")
+                    "type": table_type,
+                    "domain": domain,
+                    "columns": column_names,
+                    "primary_key": primary_key,
+                    "has_composite_key": len(primary_key) > 1
                 }
             })
         
