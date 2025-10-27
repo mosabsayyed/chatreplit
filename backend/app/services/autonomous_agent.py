@@ -6,6 +6,7 @@ from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_Y
 from app.services.composite_key_resolver import CompositeKeyResolver, CompositeKeyEntity
 from app.services.composite_key_validator import CompositeKeyValidator
 from app.services.schema_loader import get_schema_loader
+from app.utils.debug_logger import log_debug
 from dataclasses import dataclass, field
 import json
 import base64
@@ -380,7 +381,16 @@ Output ONLY valid JSON. No markdown, no explanations outside JSON."""
             {"role": "user", "content": f"Question: {question}\n\nExtract intent as JSON."}
         ]
         
+        # RAW DEBUG LOGGING - Layer 1
+        log_debug(1, "prompt_sent", {
+            "messages": messages,
+            "temperature": 0.3
+        })
+        
         response = await llm_provider.chat_completion(messages, temperature=0.3)
+        
+        # RAW DEBUG LOGGING - Layer 1
+        log_debug(1, "response_received", response)
         
         try:
             # Strip markdown code fences if present (```json ... ```)
@@ -784,11 +794,21 @@ Generate the SQL query now."""
             {"role": "user", "content": "Generate the SQL query now with composite key compliance."}
         ]
         
+        # RAW DEBUG LOGGING - Layer 2 (initial prompt)
+        log_debug(2, "prompt_sent", {
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 1500
+        })
+        
         # Retry up to 3 times with validation feedback
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 response = await llm_provider.chat_completion(messages, temperature=0.2, max_tokens=1500)
+                
+                # RAW DEBUG LOGGING - Layer 2
+                log_debug(2, "response_received", response)
                 
                 # Parse SQL response
                 cleaned = response.strip()
@@ -852,9 +872,23 @@ Generate the SQL query now."""
         generated_sql = await self.generate_sql_with_composite_keys(intent)
         if generated_sql and "sql" in generated_sql:
             print(f"✅ Generated SQL with composite keys: {generated_sql['reasoning']}")
+            
+            # RAW DEBUG LOGGING - Layer 2 SQL
+            log_debug(2, "sql_query", {
+                "sql": generated_sql["sql"],
+                "reasoning": generated_sql["reasoning"]
+            })
+            
             try:
                 # Execute generated SQL
                 results = await postgres_client.execute_query(generated_sql["sql"], [])
+                
+                # RAW DEBUG LOGGING - Layer 2 SQL Results
+                log_debug(2, "sql_results", {
+                    "row_count": len(results) if results else 0,
+                    "sample_rows": results[:5] if results else [],
+                    "full_results": results  # RAW - all data
+                })
                 
                 # Enrich context with Layer 2 metadata
                 if resolved_context:
@@ -876,6 +910,15 @@ Generate the SQL query now."""
         quarter = intent.get("time_period", {}).get("quarter")
         entities = intent.get("entities", [])
         
+        # RAW DEBUG LOGGING - Layer 2 Fallback
+        log_debug(2, "fallback_triggered", {
+            "reason": "Generated SQL unavailable or failed",
+            "year": year,
+            "quarter": quarter,
+            "entities": entities,
+            "intent_type": intent.get("intent_type")
+        })
+        
         retrieved_data = {}
         
         # Query structured entity tables with correct column names
@@ -888,8 +931,22 @@ Generate the SQL query now."""
                 ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id
                 LIMIT 20
             """
+            
+            # RAW DEBUG LOGGING - Fallback SQL
+            log_debug(2, "fallback_sql_projects", {
+                "query": query,
+                "params": [year],
+                "warning": "HARDCODED LIMIT 20 - This may be causing data truncation!"
+            })
+            
             projects = await postgres_client.execute_query(query, [year])
             retrieved_data["projects"] = projects
+            
+            # RAW DEBUG LOGGING - Fallback SQL Results
+            log_debug(2, "fallback_sql_results_projects", {
+                "row_count": len(projects) if projects else 0,
+                "full_results": projects
+            })
         
         if "ent_capabilities" in str(entities).lower() or intent.get("intent_type") in ["dashboard_view"]:
             query = """
@@ -1051,7 +1108,17 @@ Data Retrieved:
 Analyze and respond in JSON format."""}
         ]
         
+        # RAW DEBUG LOGGING - Layer 3
+        log_debug(3, "prompt_sent", {
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 2500
+        })
+        
         response = await llm_provider.chat_completion(messages, temperature=0.3, max_tokens=2500)
+        
+        # RAW DEBUG LOGGING - Layer 3
+        log_debug(3, "response_received", response)
         
         # Strip markdown code fences if present (```json ... ```)
         cleaned_response = response.strip()
@@ -1218,7 +1285,18 @@ RESPONSE RULES:
             {"role": "user", "content": user_prompt}
         ]
         
+        # RAW DEBUG LOGGING - Simple Query Handler
+        log_debug(4, "prompt_sent", {
+            "messages": messages,
+            "temperature": 0.5,
+            "max_tokens": 800,
+            "note": "simple_query_handler"
+        })
+        
         narrative = await llm_provider.chat_completion(messages, temperature=0.5, max_tokens=800)
+        
+        # RAW DEBUG LOGGING - Simple Query Handler
+        log_debug(4, "response_received", narrative)
         
         return AgentResponse(
             narrative=narrative,

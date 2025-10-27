@@ -5,6 +5,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from app.db.sqlalchemy_session import get_db
 from app.services.conversation_manager import ConversationManager
+from app.utils.debug_logger import init_debug_logger
 
 router = APIRouter()
 
@@ -70,6 +71,11 @@ async def send_message(
     # For MVP: Use demo user (id=1)
     # TODO: Replace with JWT authentication
     user_id = 1
+    
+    # Initialize debug logger for this request
+    # Will use conversation_id once we have it
+    temp_conversation_id = str(request.conversation_id) if request.conversation_id else "new"
+    debug_logger = init_debug_logger(temp_conversation_id)
     
     try:
         # CRITICAL FIX: Run synchronous SQLAlchemy in threadpool to avoid blocking event loop
