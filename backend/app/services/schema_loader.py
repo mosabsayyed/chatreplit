@@ -12,7 +12,10 @@ from collections import defaultdict
 class SchemaLoader:
     """Loads and transforms schema from schema_definition.json"""
     
-    def __init__(self, schema_path: str = "backend/app/config/schema_definition.json"):
+    def __init__(self, schema_path: Optional[str] = None):
+        if schema_path is None:
+            # Use absolute path relative to this module
+            schema_path = Path(__file__).parent.parent / "config" / "schema_definition.json"
         self.schema_path = Path(schema_path)
         self._cached_schema: Optional[Dict] = None
     
