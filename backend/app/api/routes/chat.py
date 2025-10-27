@@ -72,11 +72,6 @@ async def send_message(
     # TODO: Replace with JWT authentication
     user_id = 1
     
-    # Initialize debug logger for this request
-    # Will use conversation_id once we have it
-    temp_conversation_id = str(request.conversation_id) if request.conversation_id else "new"
-    debug_logger = init_debug_logger(temp_conversation_id)
-    
     try:
         # CRITICAL FIX: Run synchronous SQLAlchemy in threadpool to avoid blocking event loop
         
@@ -100,6 +95,9 @@ async def send_message(
                 request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
             conversation_id = conversation.id
+        
+        # Initialize debug logger AFTER we have the real conversation_id
+        debug_logger = init_debug_logger(str(conversation_id))
         
         # Store user message
         await run_in_threadpool(
@@ -248,3 +246,15 @@ async def delete_conversation(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/debug_logs/{conversation_id}")
+async def get_debug_logs(conversation_id: str):
+    """Get debug logs for a conversation - RAW layer outputs"""
+    from app.utils.debug_logger import get_debug_logs
+    
+    try:
+        logs = get_debug_logs(conversation_id)
+        return {"conversation_id": conversation_id, "logs": logs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load debug logs: {str(e)}")

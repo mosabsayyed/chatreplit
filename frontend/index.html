@@ -27,7 +27,7 @@
         
         .container {
             width: 95%;
-            max-width: 1200px;
+            max-width: 1800px;
             height: 90vh;
             background: white;
             border-radius: 20px;
@@ -41,18 +41,72 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 20px 30px;
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         
-        .header h1 {
+        .header-left h1 {
             font-size: 28px;
             font-weight: 600;
             margin-bottom: 5px;
         }
         
-        .header p {
+        .header-left p {
             font-size: 14px;
             opacity: 0.9;
+        }
+        
+        .header-right {
+            display: flex;
+            gap: 10px;
+        }
+        
+        #debugToggle {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid white;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        #debugToggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        #debugToggle.active {
+            background: white;
+            color: #667eea;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 2px solid #e0e0e0;
+        }
+        
+        .debug-section {
+            width: 0;
+            overflow: hidden;
+            transition: width 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            background: #f9f9f9;
+        }
+        
+        .debug-section.active {
+            width: 50%;
         }
         
         .chat-container {
@@ -60,6 +114,91 @@
             padding: 20px;
             overflow-y: auto;
             background: #f7f7f7;
+        }
+        
+        .debug-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .debug-header {
+            padding: 15px 20px;
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        
+        .debug-content {
+            padding: 20px;
+        }
+        
+        .layer-section {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .layer-header {
+            padding: 12px 15px;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            user-select: none;
+        }
+        
+        .layer-header:hover {
+            background: #5568d3;
+        }
+        
+        .layer-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        
+        .layer-content.expanded {
+            max-height: 2000px;
+        }
+        
+        .event-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .event-item:last-child {
+            border-bottom: none;
+        }
+        
+        .event-type {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .event-data {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .event-data pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
         
         .message {
@@ -307,33 +446,173 @@
         .suggestion:hover {
             background: #bbdefb;
         }
+        
+        .debug-empty {
+            color: #999;
+            font-style: italic;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        
+        .collapse-icon {
+            transition: transform 0.3s;
+        }
+        
+        .collapse-icon.expanded {
+            transform: rotate(90deg);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>JOSOOR - Transformation Analytics</h1>
-            <p>Autonomous AI Agent for Enterprise Transformation Intelligence</p>
-        </div>
-        
-        <div class="chat-container" id="chatContainer">
-            <div class="suggestions">
-                <div class="suggestion" onclick="askQuestion('What is the overall transformation health for 2024?')">Transformation Health</div>
-                <div class="suggestion" onclick="askQuestion('Show me project progress for digital initiatives')">Project Progress</div>
-                <div class="suggestion" onclick="askQuestion('Which capabilities have the lowest maturity?')">Capability Maturity</div>
-                <div class="suggestion" onclick="askQuestion('What are the strategic objectives for 2024?')">Strategic Objectives</div>
+            <div class="header-left">
+                <h1>JOSOOR - Transformation Analytics</h1>
+                <p>Autonomous AI Agent for Enterprise Transformation Intelligence</p>
+            </div>
+            <div class="header-right">
+                <button id="debugToggle" onclick="toggleDebugPanel()">🔍 Show Debug</button>
             </div>
         </div>
         
-        <div class="input-container">
-            <input type="text" id="questionInput" placeholder="Ask me anything about your transformation..." onkeypress="handleKeyPress(event)">
-            <button id="askButton" onclick="sendQuestion()">Ask</button>
+        <div class="main-content">
+            <div class="chat-section">
+                <div class="chat-container" id="chatContainer">
+                    <div class="suggestions">
+                        <div class="suggestion" onclick="askQuestion('What projects do we have for 2027?')">2027 Projects</div>
+                        <div class="suggestion" onclick="askQuestion('Show me project progress for digital initiatives')">Project Progress</div>
+                        <div class="suggestion" onclick="askQuestion('Which capabilities have the lowest maturity?')">Capability Maturity</div>
+                        <div class="suggestion" onclick="askQuestion('What are the strategic objectives for 2025?')">Strategic Objectives</div>
+                    </div>
+                </div>
+                
+                <div class="input-container">
+                    <input type="text" id="questionInput" placeholder="Ask me anything about your transformation..." onkeypress="handleKeyPress(event)">
+                    <button id="askButton" onclick="sendQuestion()">Ask</button>
+                </div>
+            </div>
+            
+            <div class="debug-section" id="debugSection">
+                <div class="debug-header">
+                    🔍 RAW Debug Logs - 4-Layer Agent
+                </div>
+                <div class="debug-container" id="debugContainer">
+                    <div class="debug-empty">
+                        Send a message to see debug logs from all 4 layers
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
         const API_URL = '/api/v1/chat/message';
+        const DEBUG_API_URL = '/api/v1/chat/debug_logs';
         let currentConversationId = null;
+        let debugPanelOpen = false;
+        
+        function toggleDebugPanel() {
+            debugPanelOpen = !debugPanelOpen;
+            const debugSection = document.getElementById('debugSection');
+            const debugToggle = document.getElementById('debugToggle');
+            
+            if (debugPanelOpen) {
+                debugSection.classList.add('active');
+                debugToggle.classList.add('active');
+                debugToggle.textContent = '🔍 Hide Debug';
+            } else {
+                debugSection.classList.remove('active');
+                debugToggle.classList.remove('active');
+                debugToggle.textContent = '🔍 Show Debug';
+            }
+        }
+        
+        function toggleLayerSection(layerNum) {
+            const content = document.getElementById(`layer${layerNum}Content`);
+            const icon = document.getElementById(`layer${layerNum}Icon`);
+            
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                icon.classList.remove('expanded');
+            } else {
+                content.classList.add('expanded');
+                icon.classList.add('expanded');
+            }
+        }
+        
+        async function loadDebugLogs(conversationId) {
+            if (!conversationId) return;
+            
+            try {
+                const response = await fetch(`${DEBUG_API_URL}/${conversationId}`);
+                if (!response.ok) {
+                    console.error('Failed to fetch debug logs');
+                    return;
+                }
+                
+                const data = await response.json();
+                displayDebugLogs(data.logs);
+            } catch (error) {
+                console.error('Error loading debug logs:', error);
+            }
+        }
+        
+        function displayDebugLogs(logs) {
+            const debugContainer = document.getElementById('debugContainer');
+            
+            if (!logs || !logs.layers) {
+                debugContainer.innerHTML = '<div class="debug-empty">No debug logs available</div>';
+                return;
+            }
+            
+            let html = '<div class="debug-content">';
+            
+            // Layer 1
+            html += createLayerSection(1, 'Intent Understanding', logs.layers.layer1);
+            
+            // Layer 2
+            html += createLayerSection(2, 'Retrieval & SQL Generation', logs.layers.layer2);
+            
+            // Layer 3
+            html += createLayerSection(3, 'Analytical Reasoning', logs.layers.layer3);
+            
+            // Layer 4
+            html += createLayerSection(4, 'Visualization & Response', logs.layers.layer4);
+            
+            html += '</div>';
+            debugContainer.innerHTML = html;
+        }
+        
+        function createLayerSection(layerNum, layerName, layerData) {
+            let html = `
+                <div class="layer-section">
+                    <div class="layer-header" onclick="toggleLayerSection(${layerNum})">
+                        <span>Layer ${layerNum}: ${layerName}</span>
+                        <span class="collapse-icon" id="layer${layerNum}Icon">▶</span>
+                    </div>
+                    <div class="layer-content" id="layer${layerNum}Content">
+            `;
+            
+            if (!layerData || !layerData.events || layerData.events.length === 0) {
+                html += '<div class="event-item">No data for this layer yet</div>';
+            } else {
+                // Display all events from the events array
+                for (const event of layerData.events) {
+                    html += `
+                        <div class="event-item">
+                            <div class="event-type">${event.event_type.replace(/_/g, ' ').toUpperCase()}</div>
+                            <div style="font-size: 11px; color: #999; margin-bottom: 6px;">${event.timestamp}</div>
+                            <div class="event-data">
+                                <pre>${JSON.stringify(event.data, null, 2)}</pre>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            html += '</div></div>';
+            return html;
+        }
         
         function addMessage(content, isUser = false) {
             const chatContainer = document.getElementById('chatContainer');
@@ -422,6 +701,11 @@
                 }
                 
                 addMessage(content);
+                
+                // Load debug logs after response
+                if (currentConversationId) {
+                    setTimeout(() => loadDebugLogs(currentConversationId), 500);
+                }
                 
             } catch (error) {
                 loadingDiv.remove();

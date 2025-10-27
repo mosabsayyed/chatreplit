@@ -9,24 +9,50 @@ class DebugLogger:
     
     def __init__(self, conversation_id: str):
         self.conversation_id = conversation_id
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_dir = Path(__file__).parent.parent.parent / "logs"
         self.log_dir.mkdir(exist_ok=True)
         
-        self.log_file = self.log_dir / f"chat_debug_{conversation_id}_{self.timestamp}.json"
+        # Remove timestamp from filename so same file is reused for all turns in conversation
+        self.log_file = self.log_dir / f"chat_debug_{conversation_id}.json"
         
-        # Initialize log file with empty structure
+        # Try to load existing log file if it exists (for multi-turn conversations)
+        if self.log_file.exists():
+            try:
+                with open(self.log_file, 'r') as f:
+                    self.log_data = json.load(f)
+                # Add metadata for this turn
+                if "turns" not in self.log_data:
+                    self.log_data["turns"] = []
+                self.log_data["turns"].append({
+                    "timestamp": datetime.now().isoformat(),
+                    "turn_number": len(self.log_data["turns"]) + 1
+                })
+            except Exception as e:
+                # If file exists but can't be read, start fresh
+                print(f"Warning: Could not load existing log file: {e}")
+                self._initialize_fresh_log_data()
+        else:
+            # Initialize new log file with empty structure
+            self._initialize_fresh_log_data()
+        
+        self._write_to_file()
+    
+    def _initialize_fresh_log_data(self):
+        """Initialize fresh log data structure"""
         self.log_data = {
-            "conversation_id": conversation_id,
-            "timestamp": datetime.now().isoformat(),
+            "conversation_id": self.conversation_id,
+            "created_at": datetime.now().isoformat(),
+            "turns": [{
+                "timestamp": datetime.now().isoformat(),
+                "turn_number": 1
+            }],
             "layers": {
-                "layer1": {},
-                "layer2": {},
-                "layer3": {},
-                "layer4": {}
+                "layer1": {"events": []},
+                "layer2": {"events": []},
+                "layer3": {"events": []},
+                "layer4": {"events": []}
             }
         }
-        self._write_to_file()
     
     def log_layer(self, layer_num: int, event_type: str, data: Any):
         """
@@ -39,21 +65,30 @@ class DebugLogger:
         """
         layer_key = f"layer{layer_num}"
         
-        # Ensure layer exists
+        # Ensure layer exists and has events list
         if layer_key not in self.log_data["layers"]:
-            self.log_data["layers"][layer_key] = {}
+            self.log_data["layers"][layer_key] = {"events": []}
+        elif "events" not in self.log_data["layers"][layer_key]:
+            self.log_data["layers"][layer_key]["events"] = []
         
-        # Add timestamped event
+        # Add timestamped event to events list (append, don't overwrite)
         event_time = datetime.now().isoformat()
-        event_key = f"{event_type}_{event_time}"
         
         # Store RAW data (no filtering)
+        event_data = None
         if isinstance(data, str):
-            self.log_data["layers"][layer_key][event_type] = data
+            event_data = data
         elif isinstance(data, dict) or isinstance(data, list):
-            self.log_data["layers"][layer_key][event_type] = data
+            event_data = data
         else:
-            self.log_data["layers"][layer_key][event_type] = str(data)
+            event_data = str(data)
+        
+        # Append event to list
+        self.log_data["layers"][layer_key]["events"].append({
+            "event_type": event_type,
+            "timestamp": event_time,
+            "data": event_data
+        })
         
         # Write immediately to file
         self._write_to_file()
@@ -95,3 +130,25 @@ def log_debug(layer_num: int, event_type: str, data: Any):
     """Convenience function to log debug data"""
     if _debug_logger:
         _debug_logger.log_layer(layer_num, event_type, data)
+
+def get_debug_logs(conversation_id: str) -> Dict[str, Any]:
+    """
+    Get debug logs for a conversation from file.
+    Returns the log file for the given conversation_id (single file per conversation).
+    """
+    log_dir = Path(__file__).parent.parent.parent / "logs"
+    
+    if not log_dir.exists():
+        return {"error": "No logs directory found", "layers": {}}
+    
+    # Log file pattern (no timestamp, single file per conversation)
+    log_file = log_dir / f"chat_debug_{conversation_id}.json"
+    
+    if not log_file.exists():
+        return {"error": f"No logs found for conversation {conversation_id}", "layers": {}}
+    
+    try:
+        with open(log_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": f"Failed to read log file: {str(e)}", "layers": {}}
