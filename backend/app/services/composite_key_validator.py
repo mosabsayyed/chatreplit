@@ -78,19 +78,21 @@ class CompositeKeyValidator:
         }
     
     def _extract_joins(self, sql: str) -> List[str]:
-        """Extract all JOIN clauses from SQL."""
+        """Extract all JOIN clauses from SQL (enhanced to handle multi-line SQL)."""
         import re
-        pattern = r'JOIN\s+\w+\s+\w+\s+ON\s+[^;]+'
-        return re.findall(pattern, sql, re.IGNORECASE)
+        # Match JOIN ... ON ... but stop before WHERE/GROUP/ORDER/LIMIT/next JOIN
+        # DOTALL flag allows . to match newlines for multi-line SQL
+        pattern = r'(?:INNER\s+|LEFT\s+|RIGHT\s+|FULL\s+|CROSS\s+)?JOIN\s+\w+(?:\s+AS)?\s+\w+\s+ON\s+.+?(?=\s+(?:WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|INNER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|FULL\s+JOIN|CROSS\s+JOIN|JOIN|;|$))'
+        return re.findall(pattern, sql, re.IGNORECASE | re.DOTALL)
     
     def _has_year_in_join(self, join_clause: str) -> bool:
         """Check if JOIN clause includes year column."""
         return 'year' in join_clause.lower()
     
     def _extract_table_from_join(self, join_clause: str) -> str:
-        """Extract table name from JOIN clause."""
+        """Extract table name from JOIN clause (handles LEFT/RIGHT/INNER/etc)."""
         import re
-        match = re.search(r'JOIN\s+(\w+)', join_clause, re.IGNORECASE)
+        match = re.search(r'(?:INNER\s+|LEFT\s+|RIGHT\s+|FULL\s+|CROSS\s+)?JOIN\s+(\w+)', join_clause, re.IGNORECASE)
         return match.group(1) if match else ""
     
     def _extract_where(self, sql: str) -> str:
@@ -110,21 +112,24 @@ class CompositeKeyValidator:
         return f"{table_alias}.year" in where_clause.lower()
     
     def _extract_referenced_tables(self, sql: str) -> Set[str]:
-        """Extract all table names referenced in SQL."""
+        """Extract all table names referenced in SQL (handles all JOIN types)."""
         import re
         # FROM clause
         from_tables = re.findall(r'FROM\s+(\w+)', sql, re.IGNORECASE)
-        # JOIN clauses
-        join_tables = re.findall(r'JOIN\s+(\w+)', sql, re.IGNORECASE)
+        # JOIN clauses (all types)
+        join_tables = re.findall(r'(?:INNER\s+|LEFT\s+|RIGHT\s+|FULL\s+|CROSS\s+)?JOIN\s+(\w+)', sql, re.IGNORECASE)
         return set(from_tables + join_tables)
     
     def _year_referenced_for_table(self, sql: str, table: str) -> bool:
-        """Check if year column is referenced for a specific table."""
+        """Check if year column is referenced for a specific table (handles AS keyword)."""
         # Look for table.year or alias.year in SQL
         import re
-        # Get table alias
-        alias_match = re.search(rf'{table}\s+(\w+)', sql, re.IGNORECASE)
+        # Get table alias (handles both "table alias" and "table AS alias")
+        alias_match = re.search(rf'{table}(?:\s+AS)?\s+(\w+)', sql, re.IGNORECASE)
         if alias_match:
             alias = alias_match.group(1)
-            return bool(re.search(rf'{alias}\.year', sql, re.IGNORECASE))
+            # Skip if alias is a SQL keyword
+            sql_keywords = {'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AND', 'OR', 'GROUP', 'ORDER', 'LIMIT'}
+            if alias.upper() not in sql_keywords:
+                return bool(re.search(rf'{alias}\.year', sql, re.IGNORECASE))
         return bool(re.search(rf'{table}\.year', sql, re.IGNORECASE))

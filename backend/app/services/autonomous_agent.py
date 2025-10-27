@@ -840,8 +840,13 @@ Generate the SQL query now."""
         
         return None
     
-    async def process(self, intent: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Retrieve data from structured tables and knowledge graph"""
+    async def process(
+        self, 
+        intent: Dict[str, Any], 
+        resolved_context: Optional[ResolvedContext] = None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> tuple[Dict[str, Any], Optional[ResolvedContext]]:
+        """Retrieve data from structured tables and knowledge graph - Returns (data, updated_context)"""
         
         # TRY: Generate SQL with composite keys if chain_selection available
         generated_sql = await self.generate_sql_with_composite_keys(intent)
@@ -850,11 +855,18 @@ Generate the SQL query now."""
             try:
                 # Execute generated SQL
                 results = await postgres_client.execute_query(generated_sql["sql"], [])
+                
+                # Enrich context with Layer 2 metadata
+                if resolved_context:
+                    resolved_context.layer_metadata["layer2_sql"] = generated_sql["sql"]
+                    resolved_context.layer_metadata["layer2_sql_reasoning"] = generated_sql["reasoning"]
+                    resolved_context.layer_metadata["layer2_data_sources"] = ["generated_query"]
+                
                 return {
                     "generated_query_results": results,
                     "sql": generated_sql["sql"],
                     "query_metadata": generated_sql["reasoning"]
-                }
+                }, resolved_context
             except Exception as e:
                 print(f"⚠️ Generated SQL failed to execute: {e}")
                 # Fall through to hardcoded queries
@@ -927,7 +939,13 @@ Generate the SQL query now."""
             "data_sources": list(retrieved_data.keys())
         }
         
-        return retrieved_data
+        # Enrich context with Layer 2 metadata (fallback path)
+        if resolved_context:
+            resolved_context.layer_metadata["layer2_fallback"] = True
+            resolved_context.layer_metadata["layer2_data_sources"] = list(retrieved_data.keys())
+            resolved_context.layer_metadata["layer2_year"] = year
+        
+        return retrieved_data, resolved_context
 
 
 class AnalyticalReasoningMemory:
@@ -938,9 +956,10 @@ class AnalyticalReasoningMemory:
         question: str, 
         intent: Dict[str, Any], 
         retrieved_data: Dict[str, Any],
+        resolved_context: Optional[ResolvedContext] = None,
         context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Perform analytical reasoning on retrieved data using DBA worldview approach"""
+    ) -> tuple[Dict[str, Any], Optional[ResolvedContext]]:
+        """Perform analytical reasoning on retrieved data using DBA worldview approach - Returns (analysis, updated_context)"""
         
         worldview_summary = json.dumps(WORLDVIEW_MAP, indent=2)
         temporal_ctx = get_temporal_context()
@@ -1060,7 +1079,21 @@ Analyze and respond in JSON format."""}
                 "suggestions": []
             }
         
-        return analysis
+        # Enrich context with Layer 3 analytical insights
+        if resolved_context:
+            resolved_context.layer_metadata["layer3_chain_selected"] = analysis.get("chain_selected", "Unknown")
+            resolved_context.layer_metadata["layer3_key_insights"] = analysis.get("key_insights", [])
+            # Append this analysis to previous_results for cross-turn memory
+            result_summary = {
+                "chain": analysis.get("chain_selected"),
+                "insights": analysis.get("key_insights", [])[:3]  # Top 3 insights
+            }
+            resolved_context.previous_results.append(result_summary)
+            # Track exploration path
+            if analysis.get("chain_selected") and analysis.get("chain_selected") != "Unknown":
+                resolved_context.exploration_path.append(analysis["chain_selected"])
+        
+        return analysis, resolved_context
 
 
 class VisualizationGenerationMemory:
@@ -1123,9 +1156,10 @@ class AutonomousAnalyticalAgent:
         self, 
         question: str, 
         intent: Dict[str, Any],
+        resolved_context: ResolvedContext,
         context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
-        """Handle simple queries with direct response and data retrieval"""
+        """Handle simple queries with direct response and data retrieval (uses ResolvedContext)"""
         
         temporal_ctx = get_temporal_context()
         entities = intent.get("entities", [])
@@ -1149,8 +1183,10 @@ RESPONSE RULES:
         # ALWAYS retrieve data if entities are present (even for simple queries)
         retrieved_data = {}
         if entities:
-            # Retrieve data for simple queries
-            retrieved_data = await self.layer2.process(intent, context)
+            # Retrieve data for simple queries with ResolvedContext
+            retrieved_data, updated_context = await self.layer2.process(intent, resolved_context, context)
+            if updated_context:
+                resolved_context = updated_context
         
         # Generate simple response WITH data
         user_prompt = f"Question: {question}"
@@ -1244,15 +1280,15 @@ RESPONSE RULES:
             if is_simple:
                 # SHORT-CIRCUIT: Answer simple queries directly without full analysis
                 print("⚡ SIMPLE QUERY ROUTE: Skipping layers 3-4")
-                return await self._handle_simple_query(question, intent, context)
+                return await self._handle_simple_query(question, intent, resolved_context, context)
             
-            # COMPLEX PATH: Full 4-layer processing
+            # COMPLEX PATH: Full 4-layer processing with ResolvedContext
             print("🔷 LAYER 2: HybridRetrieval - Starting...")
-            retrieved_data = await self.layer2.process(intent, context)
+            retrieved_data, resolved_context = await self.layer2.process(intent, resolved_context, context)
             print(f"✅ LAYER 2: Complete - Retrieved {len(retrieved_data)} data sources")
             
             print("🔷 LAYER 3: AnalyticalReasoning - Starting...")
-            analysis = await self.layer3.process(question, intent, retrieved_data, context)
+            analysis, resolved_context = await self.layer3.process(question, intent, retrieved_data, resolved_context, context)
             print(f"✅ LAYER 3: Complete - Chain: {analysis.get('chain_selected')}")
             
             print("🔷 LAYER 4: VisualizationGeneration - Starting...")
@@ -1283,7 +1319,7 @@ RESPONSE RULES:
                 ),
                 metadata={
                     "intent": intent,
-                    "resolved_context": resolved_context.to_dict(),
+                    "resolved_context": resolved_context.to_dict() if resolved_context else {},
                     "data_sources": list(retrieved_data.keys()),
                     "chain_selected": analysis.get("chain_selected", "Unknown"),
                     "chain_reasoning": analysis.get("chain_reasoning", "Not specified"),
