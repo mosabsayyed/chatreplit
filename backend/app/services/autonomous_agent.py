@@ -970,10 +970,10 @@ TEMPORAL AWARENESS (CRITICAL):
 - TODAY'S DATE: {temporal_ctx['current_date']}
 - CURRENT YEAR: {temporal_ctx['current_year']}
 - CURRENT QUARTER: Q{temporal_ctx['current_quarter']}
-- When analyzing data, remember we are in {temporal_ctx['current_year']}, not 2024
+- When analyzing data, remember we are in {temporal_ctx['current_year']}
 - Data from {temporal_ctx['current_year']} is CURRENT data
-- Data from 2024 is HISTORICAL (1 year ago)
-- Data from 2026+ is FUTURE/PLANNED
+- Data from {temporal_ctx['current_year'] - 1} is HISTORICAL (1 year ago)
+- Data from {temporal_ctx['current_year'] + 1}+ is FUTURE/PLANNED
 
 WORLDVIEW MAP (DTDL Knowledge Graph Structure):
 {worldview_summary}
@@ -992,7 +992,7 @@ WORKFLOW:
 
 TEMPORAL PATTERNS:
 - Default/Current: year = {temporal_ctx['current_year']}
-- Trends: year BETWEEN 2024 AND 2028
+- Trends: year BETWEEN {temporal_ctx['current_year'] - 1} AND {temporal_ctx['current_year'] + 3}
 - Historical: year < {temporal_ctx['current_year']}
 - Future: year > {temporal_ctx['current_year']}
 
@@ -1007,7 +1007,23 @@ Return valid JSON only:
 {{
   "chain_selected": "name of chain from worldview map (e.g., '2A_Strategy_to_Tactics_Tools')",
   "chain_reasoning": "why this chain was chosen",
-  "narrative": "Clear, professional analysis (2-3 paragraphs) using specific data points and chain relationships",
+  "narrative": "STRUCTURED analysis using markdown formatting:
+  - Use **bold** for key metrics and entities
+  - Use bullet points (•) for lists
+  - Use tables when comparing data
+  - Start with executive summary (1-2 sentences)
+  - Follow with detailed breakdown (bullets or numbered lists)
+  - End with conclusion or recommendation
+  
+  Example format:
+  **Executive Summary:** Projects show 75% completion with strong performance in Q4 {temporal_ctx['current_year']}.
+  
+  **Key Findings:**
+  • Project Alpha: 85% complete, on track
+  • Project Beta: 65% complete, needs attention
+  • Resource allocation: Optimal for Q1 {temporal_ctx['current_year'] + 1}
+  
+  **Recommendation:** Focus resources on Project Beta to maintain timeline.",
   "key_insights": ["insight 1 with evidence", "insight 2 with evidence", "insight 3 with evidence"],
   "recommended_visualizations": ["chart_type1", "chart_type2"],
   "data_quality_warnings": ["warning if applicable"],
