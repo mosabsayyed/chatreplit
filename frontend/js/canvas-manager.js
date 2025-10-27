@@ -185,35 +185,15 @@ class CanvasManager {
         `;
         
         try {
-            // TODO: Replace with actual API call
-            // const response = await fetch(`/api/v1/canvas/artifacts/${artifactId}`);
-            // const artifact = await response.json();
+            // Find artifact in local cache
+            const artifact = this.artifacts.find(a => a.id === artifactId);
             
-            // For now, show placeholder
-            contentContainer.innerHTML = `
-                <div class="artifact-container">
-                    <div class="artifact-header">
-                        <div class="artifact-title-main">Sample Artifact</div>
-                        <div class="artifact-meta-row">
-                            <div class="artifact-meta-item">
-                                <span>📅</span>
-                                <span>Created: Oct 27, 2025</span>
-                            </div>
-                            <div class="artifact-meta-item">
-                                <span>👤</span>
-                                <span>Version: 1</span>
-                            </div>
-                        </div>
-                        <div class="artifact-actions">
-                            <button class="export-btn">📥 Export PDF</button>
-                            <button class="export-btn secondary">📄 Export DOCX</button>
-                        </div>
-                    </div>
-                    <div class="artifact-body">
-                        <p>Artifact content will be rendered here based on type.</p>
-                    </div>
-                </div>
-            `;
+            if (!artifact) {
+                throw new Error('Artifact not found');
+            }
+            
+            // Render based on artifact type
+            this.renderArtifactByType(artifact);
             
             // Switch to expanded mode if in collapsed
             if (this.currentMode === 'collapsed') {
@@ -231,6 +211,60 @@ class CanvasManager {
         }
     }
     
+    renderArtifactByType(artifact) {
+        switch(artifact.artifact_type.toUpperCase()) {
+            case 'CHART':
+                if (typeof chartRenderer !== 'undefined') {
+                    chartRenderer.render(artifact);
+                } else {
+                    console.error('ChartRenderer not loaded');
+                }
+                break;
+            
+            case 'REPORT':
+                // TODO: Implement ReportRenderer
+                this.renderPlaceholder(artifact, 'Report rendering coming soon');
+                break;
+            
+            case 'TABLE':
+                // TODO: Implement TableRenderer
+                this.renderPlaceholder(artifact, 'Table rendering coming soon');
+                break;
+            
+            case 'DOCUMENT':
+                // TODO: Implement DocumentRenderer
+                this.renderPlaceholder(artifact, 'Document rendering coming soon');
+                break;
+            
+            default:
+                this.renderPlaceholder(artifact, 'Unknown artifact type');
+        }
+    }
+    
+    renderPlaceholder(artifact, message) {
+        const contentContainer = document.getElementById('canvasContent');
+        contentContainer.innerHTML = `
+            <div class="artifact-container">
+                <div class="artifact-header">
+                    <div class="artifact-title-main">${artifact.title}</div>
+                    <div class="artifact-meta-row">
+                        <div class="artifact-meta-item">
+                            <span>📅</span>
+                            <span>Created: ${new Date(artifact.created_at).toLocaleDateString()}</span>
+                        </div>
+                        <div class="artifact-meta-item">
+                            <span>📦</span>
+                            <span>Type: ${artifact.artifact_type}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="artifact-body">
+                    <p>${message}</p>
+                </div>
+            </div>
+        `;
+    }
+    
     createArtifact(type, title, content) {
         // This will be called when agent creates an artifact from chat
         const artifact = {
@@ -244,12 +278,43 @@ class CanvasManager {
         this.artifacts.unshift(artifact);
         this.renderArtifactList();
         
-        // Auto-open canvas in collapsed mode
+        // Auto-open canvas and load the artifact
         if (this.currentMode === 'hidden') {
             this.setMode('collapsed');
         }
         
+        // Auto-load the newly created artifact
+        this.loadArtifact(artifact.id);
+        
         return artifact;
+    }
+    
+    // Helper method for testing - create sample chart
+    createSampleChart() {
+        const sampleChart = {
+            type: 'radar',
+            chart_title: 'Capability Maturity Assessment',
+            subtitle: 'Current vs Target State',
+            categories: ['Digital Twin', 'Process Mining', 'AI Orchestration', 'Analytics', 'Data Quality'],
+            max_value: 5,
+            series: [
+                {
+                    name: 'Current State',
+                    data: [2, 3, 1, 4, 3],
+                    pointPlacement: 'on',
+                    color: '#ff6b6b'
+                },
+                {
+                    name: 'Target State',
+                    data: [5, 5, 4, 5, 5],
+                    pointPlacement: 'on',
+                    color: '#667eea'
+                }
+            ],
+            description: 'This spider chart shows the current maturity level versus target state across five key transformation capabilities.'
+        };
+        
+        return this.createArtifact('CHART', 'Capability Maturity Assessment', sampleChart);
     }
 }
 
