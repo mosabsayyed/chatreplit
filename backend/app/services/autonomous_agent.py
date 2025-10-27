@@ -357,6 +357,66 @@ Output:
 }}
 ```
 
+### Example 4: General Query (NO Specific Entity Reference)
+User: "What projects do we have for 2027?"
+
+Output:
+```json
+{{
+  "user_intent": "search",
+  "entity_mentions": [{{"text": "projects", "type": "project", "is_reference": false, "confidence": 0.9}}],
+  "resolved_references": [],
+  "chain_selection": {{
+    "chain_id": "general_list",
+    "estimated_hops": 0,
+    "source_table": null,
+    "target_tables": ["ent_projects"],
+    "reasoning": "General listing query with no specific source entity. Direct table query with filters."
+  }},
+  "target_entities": ["ent_projects"],
+  "filters": {{
+    "year": 2027,
+    "status": null
+  }},
+  "temporal_scope": {{
+    "mode": "single",
+    "years": [2027],
+    "comparison_years": []
+  }},
+  "complexity_score": 1,
+  "requires_multi_turn": false
+}}
+```
+
+### Example 5: Another General Query
+User: "Show me all active capabilities this year"
+
+Output:
+```json
+{{
+  "user_intent": "search",
+  "entity_mentions": [{{"text": "capabilities", "type": "capability", "is_reference": false, "confidence": 0.95}}],
+  "resolved_references": [],
+  "chain_selection": {{
+    "chain_id": "general_list",
+    "estimated_hops": 0,
+    "source_table": null,
+    "target_tables": ["ent_capabilities"],
+    "reasoning": "General listing query for capabilities. Direct table query."
+  }},
+  "target_entities": ["ent_capabilities"],
+  "filters": {{
+    "year": 2025,
+    "status": "active"
+  }},
+  "temporal_scope": {{
+    "mode": "single",
+    "years": [2025]
+  }},
+  "complexity_score": 1
+}}
+```
+
 ---
 
 ## CRITICAL RULES
@@ -366,6 +426,12 @@ Output:
 3. **ALWAYS select chain that covers full path** - Don't pick shorter chains
 4. **USE conversation history** - Don't ignore previous turns
 5. **PREFER longer chains** when uncertain - Better to have extra capacity than fall short
+6. **FOR GENERAL QUERIES (no specific entity):** 
+   - Set resolved_references to []
+   - Set source_table to null
+   - ALWAYS populate target_entities with table names (e.g., ["ent_projects"])
+   - ALWAYS extract year from question and put in filters.year
+   - Map user terms: "projects" → "ent_projects", "capabilities" → "ent_capabilities", "objectives" → "sec_objectives"
 
 Output ONLY valid JSON. No markdown, no explanations outside JSON."""
         
@@ -435,25 +501,41 @@ class HybridRetrievalMemory:
             self.validator = CompositeKeyValidator(schema)
     
     async def generate_sql_with_composite_keys(self, intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Generate SQL query with MANDATORY composite key enforcement"""
+        """Generate SQL query with MANDATORY composite key enforcement - Supports TWO modes"""
         
         # Ensure validator is loaded with introspected schema
         await self._ensure_validator()
         
-        # Extract chain selection and resolved references from Layer 1
+        # Extract data from Layer 1
         chain_selection = intent.get("chain_selection", {})
         resolved_refs = intent.get("resolved_references", [])
+        target_entities = intent.get("target_entities", [])
+        filters = intent.get("filters", {})
         
-        if not chain_selection or not resolved_refs:
-            return None  # Fallback to hardcoded queries
+        # MODE 1: Specific entity query (with resolved references)
+        if resolved_refs and len(resolved_refs) > 0:
+            source_id = resolved_refs[0].get("entity_id")
+            source_year = resolved_refs[0].get("entity_year")
+            source_table = chain_selection.get("source_table")
+            target_tables = chain_selection.get("target_tables", [])
+            
+            if not source_id or not source_year or not source_table:
+                return None
+            
+            # Continue with entity-specific SQL generation (existing path)
+            return await self._generate_entity_specific_sql(intent, source_id, source_year, source_table, target_tables, chain_selection)
         
-        source_id = resolved_refs[0].get("entity_id") if resolved_refs else None
-        source_year = resolved_refs[0].get("entity_year") if resolved_refs else None
-        source_table = chain_selection.get("source_table")
-        target_tables = chain_selection.get("target_tables", [])
+        # MODE 2: General query (no specific entity, just filters)
+        elif target_entities and len(target_entities) > 0:
+            # Generate simple SELECT with WHERE filters
+            return await self._generate_general_query_sql(intent, target_entities, filters)
         
-        if not source_id or not source_year or not source_table:
+        # MODE 3: No useful data from Layer 1 - fallback
+        else:
             return None
+    
+    async def _generate_entity_specific_sql(self, intent: Dict[str, Any], source_id: str, source_year: int, source_table: str, target_tables: list, chain_selection: dict) -> Optional[Dict[str, Any]]:
+        """Generate SQL for entity-specific queries with JOINs"""
         
         # EXACT Layer 2 SQL Generation Prompt from optimization package (layer2_sql_generation_prompt.txt)
         system_prompt = f"""You are an expert SQL query generator for JOSOOR's time-series organizational transformation database.
@@ -859,6 +941,48 @@ Generate the SQL query now."""
                     return None
         
         return None
+    
+    async def _generate_general_query_sql(self, intent: Dict[str, Any], target_entities: list, filters: dict) -> Optional[Dict[str, Any]]:
+        """Generate simple SQL for general queries without specific entity references"""
+        
+        # For now, support single table queries
+        if len(target_entities) == 0:
+            return None
+        
+        target_table = target_entities[0]  # Primary target table
+        year = filters.get("year", CURRENT_YEAR)
+        status = filters.get("status")
+        
+        # Build simple SELECT query with composite key awareness
+        query_parts = []
+        query_parts.append(f"SELECT * FROM {target_table}")
+        
+        where_clauses = []
+        where_clauses.append(f"year = {year}")
+        
+        if status:
+            where_clauses.append(f"status = '{status}'")
+        
+        if where_clauses:
+            query_parts.append("WHERE " + " AND ".join(where_clauses))
+        
+        # Add ORDER BY for consistent results
+        query_parts.append(f"ORDER BY CAST(SUBSTRING(id FROM '^[0-9]+') AS INTEGER), id")
+        
+        sql = "\n".join(query_parts)
+        
+        # RAW DEBUG LOGGING - General Query SQL
+        log_debug(2, "general_query_sql", {
+            "target_table": target_table,
+            "filters": filters,
+            "sql": sql,
+            "reasoning": f"General query for {target_table} with year={year}"
+        })
+        
+        return {
+            "sql": sql,
+            "reasoning": f"General listing query for {target_table} filtered by year={year}" + (f" and status={status}" if status else "")
+        }
     
     async def process(
         self, 
