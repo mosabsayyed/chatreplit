@@ -6,7 +6,7 @@ from app.utils.temporal import get_current_year, get_temporal_context, CURRENT_Y
 from app.services.composite_key_resolver import CompositeKeyResolver, CompositeKeyEntity
 from app.services.composite_key_validator import CompositeKeyValidator
 from app.services.schema_loader import get_schema_loader
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import base64
 import io
@@ -25,26 +25,75 @@ class ResolvedContext:
     Comprehensive context object passed across all agent layers.
     Source: OPTIMIZATION_ANALYSIS.md lines 398-426
     """
+    # User context
     user_id: str
     conversation_id: str
     current_turn: int
     
+    # Intent analysis (Layer 1 output)
     user_intent: str
-    entity_mentions: List[Dict]
-    resolved_references: List[Dict]
-    selected_chain: str
-    required_hops: int
+    entity_mentions: List[Dict] = field(default_factory=list)
+    resolved_references: List[Dict] = field(default_factory=list)
+    selected_chain: str = ""
+    required_hops: int = 0
     
-    target_entities: List[str]
-    filters: Dict[str, Any]
-    temporal_scope: Dict[str, Any]
+    # Query context
+    target_entities: List[str] = field(default_factory=list)
+    filters: Dict[str, Any] = field(default_factory=dict)
+    temporal_scope: Dict[str, Any] = field(default_factory=dict)
     
-    previous_results: List[Dict]
-    entity_cache: Dict[str, Dict]
-    exploration_path: List[str]
+    # Conversation memory
+    previous_results: List[Dict] = field(default_factory=list)
+    entity_cache: Dict[str, Dict] = field(default_factory=dict)
+    exploration_path: List[str] = field(default_factory=list)
     
-    timestamp: datetime
-    layer_metadata: Dict[str, Any]
+    # Metadata
+    timestamp: datetime = field(default_factory=datetime.now)
+    layer_metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    @classmethod
+    def from_intent(
+        cls,
+        intent: Dict[str, Any],
+        user_id: str,
+        conversation_id: str,
+        current_turn: int
+    ) -> 'ResolvedContext':
+        """Create ResolvedContext from Layer 1 intent output."""
+        return cls(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            current_turn=current_turn,
+            user_intent=intent.get("intent_type", ""),
+            entity_mentions=intent.get("entities", []),
+            resolved_references=intent.get("resolved_references", []),
+            selected_chain=intent.get("selected_chain", ""),
+            required_hops=intent.get("required_hops", 0),
+            target_entities=intent.get("target_entities", []),
+            filters=intent.get("filters", {}),
+            temporal_scope=intent.get("temporal_scope", {})
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert ResolvedContext to dictionary for serialization."""
+        return {
+            "user_id": self.user_id,
+            "conversation_id": self.conversation_id,
+            "current_turn": self.current_turn,
+            "user_intent": self.user_intent,
+            "entity_mentions": self.entity_mentions,
+            "resolved_references": self.resolved_references,
+            "selected_chain": self.selected_chain,
+            "required_hops": self.required_hops,
+            "target_entities": self.target_entities,
+            "filters": self.filters,
+            "temporal_scope": self.temporal_scope,
+            "previous_results": self.previous_results,
+            "entity_cache": self.entity_cache,
+            "exploration_path": self.exploration_path,
+            "timestamp": self.timestamp.isoformat() if isinstance(self.timestamp, datetime) else str(self.timestamp),
+            "layer_metadata": self.layer_metadata
+        }
 
 
 class IntentUnderstandingMemory:
