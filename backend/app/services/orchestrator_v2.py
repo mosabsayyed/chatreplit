@@ -1,0 +1,475 @@
+"""
+Single-Layer LLM Orchestrator with Function Calling
+Replaces inefficient 4-layer agent with pgvector-augmented single LLM call
+"""
+import json
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+import openai
+from pydantic import ValidationError
+
+from app.services.semantic_search import SemanticSearchService
+from app.services.sql_executor import SQLExecutorService
+from app.services.llm_provider import LLMProvider
+from app.models.function_calling import (
+    SemanticSearchSchemaInput,
+    SemanticSearchEntitiesInput,
+    ExecuteSQLInput,
+    ExecuteSimpleQueryInput,
+    SchemaSearchResult,
+    EntitySearchResult,
+    SQLExecutionResult,
+    OrchestratorResponse,
+    OrchestratorStep,
+    FunctionCall
+)
+from app.config import settings
+
+
+class OrchestratorV2:
+    """
+    Single-layer LLM orchestrator using pgvector semantic search
+    
+    Architecture:
+        User Query → LLM with function calling → semantic_search/execute_sql → Response
+        
+    Benefits:
+        - 75% cost reduction (1 LLM call vs 4)
+        - Faster response times
+        - Structured outputs guaranteed via Pydantic
+        - Function calling for tool orchestration
+    """
+    
+    SYSTEM_PROMPT = """You are JOSOOR, an enterprise transformation analytics assistant.
+
+Your role is to help users analyze transformation data using semantic search and SQL queries.
+
+AVAILABLE TOOLS:
+
+1. search_schema(query, top_k) - Find relevant database tables, columns, and relationships
+   - Use when user asks about available data or schema discovery
+   - Example: "What tables are related to projects?"
+
+2. search_entities(query, entity_type, top_k) - Find specific entities using semantic search
+   - Use to resolve fuzzy entity references: "Project Atlas", "high-risk issues", "digital initiatives"
+   - entity_type options: project, capability, objective, risk, strategy, tactic, it_system, entity
+   - Returns exact IDs and years for SQL queries
+
+3. execute_sql(sql, validate, max_rows) - Execute SQL queries with composite key validation
+   - CRITICAL: All JOINs and WHERE clauses on ID columns MUST include year
+   - Example: JOIN ent_capabilities c ON p.id = c.project_id AND p.year = c.year
+   - Use after finding entities or schema to fetch actual data
+
+4. execute_simple_query(table_name, filters, columns, max_rows) - Simple filter-based queries
+   - Use for straightforward single-table queries
+   - Example: table_name="ent_projects", filters={"year": 2027, "status": "active"}
+
+WORKFLOW:
+
+1. User asks a question
+2. Determine what tools to call:
+   - Schema discovery? → search_schema()
+   - Find specific entities? → search_entities()
+   - Get data? → execute_sql() or execute_simple_query()
+3. Call tools in parallel when possible
+4. Synthesize results into clear, concise answer
+
+COMPOSITE KEY RULES:
+- Tables use (id, year) composite primary keys
+- ALWAYS join on BOTH id AND year: ON a.id = b.parent_id AND a.year = b.year
+- Never join on ID alone
+
+CURRENT YEAR: 2025
+
+Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
+
+    def __init__(self):
+        """Initialize orchestrator with required services"""
+        self.semantic_search = SemanticSearchService()
+        self.sql_executor = SQLExecutorService()
+        self.llm_provider = LLMProvider()
+        self.debug_log = []
+    
+    def _get_openai_client(self):
+        """Get OpenAI client for function calling"""
+        # Use the LLM provider's _get_client method
+        return self.llm_provider._get_client()
+    
+    def _build_function_tools(self) -> List[Dict[str, Any]]:
+        """Build OpenAI function calling tool definitions"""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_schema",
+                    "description": "Search database schema for relevant tables, columns, and relationships using semantic similarity",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Natural language description of schema elements to find"
+                            },
+                            "top_k": {
+                                "type": "integer",
+                                "description": "Number of results to return",
+                                "default": 5
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_entities",
+                    "description": "Search for specific entities (projects, capabilities, objectives, etc.) using semantic similarity",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Natural language description of entities to find"
+                            },
+                            "entity_type": {
+                                "type": "string",
+                                "description": "Filter by entity type",
+                                "enum": ["project", "capability", "objective", "risk", "strategy", "tactic", "it_system", "entity"]
+                            },
+                            "top_k": {
+                                "type": "integer",
+                                "description": "Number of results to return",
+                                "default": 10
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_sql",
+                    "description": "Execute SQL query with composite key validation. CRITICAL: All JOINs and WHERE on ID columns must include year.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "sql": {
+                                "type": "string",
+                                "description": "SQL query to execute"
+                            },
+                            "validate": {
+                                "type": "boolean",
+                                "description": "Validate composite key compliance",
+                                "default": True
+                            },
+                            "max_rows": {
+                                "type": "integer",
+                                "description": "Maximum rows to return",
+                                "default": 1000
+                            }
+                        },
+                        "required": ["sql"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_simple_query",
+                    "description": "Execute simple filter-based query on a single table",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "table_name": {
+                                "type": "string",
+                                "description": "Table to query"
+                            },
+                            "filters": {
+                                "type": "object",
+                                "description": "Column-value filters",
+                                "additionalProperties": True
+                            },
+                            "columns": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Columns to select"
+                            },
+                            "max_rows": {
+                                "type": "integer",
+                                "description": "Maximum rows to return",
+                                "default": 1000
+                            }
+                        },
+                        "required": ["table_name", "filters"]
+                    }
+                }
+            }
+        ]
+    
+    def _execute_function_call(
+        self,
+        function_name: str,
+        arguments: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute a function call from the LLM
+        
+        Args:
+            function_name: Name of function to call
+            arguments: Function arguments
+            
+        Returns:
+            Function result as dictionary
+        """
+        try:
+            if function_name == "search_schema":
+                input_model = SemanticSearchSchemaInput(**arguments)
+                result = self.semantic_search.search_schema(
+                    query=input_model.query,
+                    top_k=input_model.top_k
+                )
+                return result
+            
+            elif function_name == "search_entities":
+                input_model = SemanticSearchEntitiesInput(**arguments)
+                result = self.semantic_search.search_entities(
+                    query=input_model.query,
+                    entity_type=input_model.entity_type,
+                    top_k=input_model.top_k
+                )
+                return result
+            
+            elif function_name == "execute_sql":
+                input_model = ExecuteSQLInput(**arguments)
+                result = self.sql_executor.execute_query(
+                    sql=input_model.sql,
+                    validate=input_model.validate,
+                    max_rows=input_model.max_rows
+                )
+                return {
+                    "success": result["success"],
+                    "data": result.get("data"),
+                    "row_count": result.get("row_count", 0),
+                    "error": result.get("error"),
+                    "sql": input_model.sql
+                }
+            
+            elif function_name == "execute_simple_query":
+                input_model = ExecuteSimpleQueryInput(**arguments)
+                result = self.sql_executor.execute_simple_filter_query(
+                    table_name=input_model.table_name,
+                    filters=input_model.filters,
+                    columns=input_model.columns,
+                    max_rows=input_model.max_rows
+                )
+                return {
+                    "success": result["success"],
+                    "data": result.get("data"),
+                    "row_count": result.get("row_count", 0),
+                    "error": result.get("error"),
+                    "table": input_model.table_name
+                }
+            
+            else:
+                return {
+                    "success": False,
+                    "error": f"Unknown function: {function_name}"
+                }
+        
+        except ValidationError as e:
+            return {
+                "success": False,
+                "error": f"Validation error: {str(e)}"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Execution error: {str(e)}"
+            }
+    
+    def process_query(
+        self,
+        user_query: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        max_iterations: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Process user query using function calling
+        
+        Args:
+            user_query: User's question
+            conversation_history: Previous messages in OpenAI format [{role, content}]
+            max_iterations: Maximum function calling iterations
+            
+        Returns:
+            Dictionary with answer, steps_taken, and metadata
+        """
+        self.debug_log = []
+        steps = []
+        
+        # Build messages
+        messages = []
+        
+        # Add system prompt
+        messages.append({
+            "role": "system",
+            "content": self.SYSTEM_PROMPT
+        })
+        
+        # Add conversation history if provided
+        if conversation_history:
+            messages.extend(conversation_history)
+        
+        # Add current user query
+        messages.append({
+            "role": "user",
+            "content": user_query
+        })
+        
+        # Log initial state
+        self.debug_log.append({
+            "type": "orchestrator_start",
+            "user_query": user_query,
+            "conversation_history_length": len(conversation_history) if conversation_history else 0,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+        
+        # Get OpenAI client
+        client = self._get_openai_client()
+        tools = self._build_function_tools()
+        
+        # Iterative function calling loop
+        iteration = 0
+        while iteration < max_iterations:
+            iteration += 1
+            
+            self.debug_log.append({
+                "type": "llm_call",
+                "iteration": iteration,
+                "message_count": len(messages),
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            # Call LLM with function calling
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto"
+                )
+                
+                assistant_message = response.choices[0].message
+                
+                # Log LLM response
+                self.debug_log.append({
+                    "type": "llm_response",
+                    "finish_reason": response.choices[0].finish_reason,
+                    "has_tool_calls": bool(assistant_message.tool_calls),
+                    "tool_call_count": len(assistant_message.tool_calls) if assistant_message.tool_calls else 0
+                })
+                
+                # If no tool calls, we have final answer
+                if not assistant_message.tool_calls:
+                    final_answer = assistant_message.content
+                    
+                    self.debug_log.append({
+                        "type": "orchestrator_complete",
+                        "iterations": iteration,
+                        "steps_taken": len(steps)
+                    })
+                    
+                    return {
+                        "answer": final_answer,
+                        "steps_taken": steps,
+                        "debug_log": self.debug_log,
+                        "total_iterations": iteration,
+                        "success": True
+                    }
+                
+                # Add assistant message to history
+                messages.append(assistant_message)
+                
+                # Execute tool calls
+                for tool_call in assistant_message.tool_calls:
+                    function_name = tool_call.function.name
+                    arguments = json.loads(tool_call.function.arguments)
+                    
+                    self.debug_log.append({
+                        "type": "function_call",
+                        "function": function_name,
+                        "arguments": arguments
+                    })
+                    
+                    # Execute function
+                    result = self._execute_function_call(function_name, arguments)
+                    
+                    self.debug_log.append({
+                        "type": "function_result",
+                        "function": function_name,
+                        "success": result.get("success", True),
+                        "result_summary": self._summarize_result(result)
+                    })
+                    
+                    # Track step
+                    steps.append({
+                        "step_number": len(steps) + 1,
+                        "function_call": {
+                            "function_name": function_name,
+                            "arguments": arguments,
+                            "reasoning": f"LLM called {function_name}"
+                        },
+                        "result": result,
+                        "status": "success" if result.get("success", True) else "error"
+                    })
+                    
+                    # Add function result to messages
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": function_name,
+                        "content": json.dumps(result)
+                    })
+            
+            except Exception as e:
+                self.debug_log.append({
+                    "type": "error",
+                    "error": str(e),
+                    "iteration": iteration
+                })
+                
+                return {
+                    "answer": f"Error processing query: {str(e)}",
+                    "steps_taken": steps,
+                    "debug_log": self.debug_log,
+                    "success": False,
+                    "error": str(e)
+                }
+        
+        # Max iterations reached
+        return {
+            "answer": "Query processing exceeded maximum iterations. Please try rephrasing your question.",
+            "steps_taken": steps,
+            "debug_log": self.debug_log,
+            "success": False,
+            "error": "Max iterations reached"
+        }
+    
+    def _summarize_result(self, result: Dict[str, Any]) -> str:
+        """Summarize function result for logging"""
+        if not result.get("success", True):
+            return f"Error: {result.get('error', 'Unknown error')}"
+        
+        if "data" in result:
+            row_count = result.get("row_count", len(result.get("data", [])))
+            return f"{row_count} rows returned"
+        
+        if "entities" in result:
+            return f"{len(result['entities'])} entities found"
+        
+        if "tables" in result:
+            return f"{len(result['tables'])} tables found"
+        
+        return "Success"

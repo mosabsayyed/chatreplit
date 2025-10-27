@@ -11,6 +11,11 @@ class Settings:
     
     # Database Configuration
     DATABASE_URL = os.getenv("DATABASE_URL")
+    PGUSER = os.getenv("PGUSER")
+    PGPASSWORD = os.getenv("PGPASSWORD")
+    PGHOST = os.getenv("PGHOST")
+    PGPORT = os.getenv("PGPORT")
+    PGDATABASE = os.getenv("PGDATABASE")
     
     # Current year for filters
     CURRENT_YEAR = 2025

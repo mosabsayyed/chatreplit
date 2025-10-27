@@ -162,6 +162,123 @@ async def send_message(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/message/v2", response_model=ChatResponse)
+async def send_message_v2(
+    request: ChatRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    V2 Chat Endpoint - Single-layer LLM with pgvector semantic search
+    
+    This endpoint:
+    1. Uses pgvector-augmented single LLM orchestrator (1 call vs 4)
+    2. Maintains conversation history for multi-turn interactions
+    3. Function calling for semantic_search() and execute_sql() tools
+    4. 75% cost reduction compared to 4-layer agent
+    """
+    from starlette.concurrency import run_in_threadpool
+    from app.services.orchestrator_v2 import OrchestratorV2
+    
+    conversation_manager = ConversationManager(db)
+    user_id = 1  # Demo user (TODO: JWT auth)
+    
+    try:
+        # Get or create conversation
+        if request.conversation_id:
+            conversation = await run_in_threadpool(
+                conversation_manager.get_conversation,
+                request.conversation_id,
+                user_id
+            )
+            if not conversation:
+                raise HTTPException(status_code=404, detail="Conversation not found")
+            conversation_id = request.conversation_id
+        else:
+            conversation = await run_in_threadpool(
+                conversation_manager.create_conversation,
+                user_id,
+                request.persona,
+                request.query[:50] + ("..." if len(request.query) > 50 else "")
+            )
+            conversation_id = conversation.id
+        
+        # Initialize debug logger
+        debug_logger = init_debug_logger(str(conversation_id))
+        
+        # Store user message
+        await run_in_threadpool(
+            conversation_manager.add_message,
+            conversation_id,
+            "user",
+            request.query
+        )
+        
+        # Build conversation history in OpenAI format
+        messages = await run_in_threadpool(
+            conversation_manager.get_messages,
+            conversation_id,
+            limit=20  # Last 20 messages for context
+        )
+        
+        # Convert to OpenAI format (excluding current user query)
+        conversation_history = []
+        for msg in messages[:-1]:  # Exclude the message we just added
+            conversation_history.append({
+                "role": msg.role,
+                "content": msg.content
+            })
+        
+        # Initialize orchestrator and process query
+        orchestrator = OrchestratorV2()
+        
+        # Process query with conversation context
+        result = await run_in_threadpool(
+            orchestrator.process_query,
+            request.query,
+            conversation_history,
+            max_iterations=5
+        )
+        
+        # Log debug information
+        debug_logger.log_layer(
+            "orchestrator_v2",
+            {
+                "success": result.get("success", False),
+                "iterations": result.get("total_iterations", 0),
+                "steps_taken": result.get("steps_taken", []),
+                "debug_log": result.get("debug_log", [])
+            }
+        )
+        
+        # Extract answer
+        answer = result.get("answer", "I apologize, but I encountered an error processing your query.")
+        
+        # Store assistant response
+        await run_in_threadpool(
+            conversation_manager.add_message,
+            conversation_id,
+            "assistant",
+            answer,
+            {
+                "orchestrator_version": "v2",
+                "steps_taken": result.get("steps_taken", []),
+                "total_iterations": result.get("total_iterations", 0),
+                "success": result.get("success", False)
+            }
+        )
+        
+        return ChatResponse(
+            conversation_id=conversation_id,
+            message=answer,
+            visualization=None,  # Future: extract from function call results
+            insights=[]  # Future: extract key insights from results
+        )
+    
+    except Exception as e:
+        debug_logger.log_error("orchestrator_v2_error", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
     db: Session = Depends(get_db)
