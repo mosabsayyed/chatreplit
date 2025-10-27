@@ -263,9 +263,44 @@ This fusion creates a **living, queryable representation** of your enterprise tr
 - Automatic schema discovery
 - Structured outputs guaranteed via Pydantic
 
+## Graph Memory Architecture (PAUSED - External Supabase Setup)
+
+**Core Innovation:** Digital twin as graph memory - LLM navigates relationships the way the digital twin behaves
+
+**Architecture Decision:**
+- **External Supabase** handles: PostgreSQL + pgvector + graph extensions  
+- User manages database setup independently
+- Agent connects via connection strings
+
+**Implementation Ready:**
+1. Graph service layer (Python) connects to external Supabase
+2. Orchestrator tools: `graph_walk()`, `graph_search()`, `graph_analytics()`
+3. Flow: pgvector entity resolution → graph traversal → SQL queries
+
+**Status:** ⏸️ Waiting for external Supabase setup with connection credentials
+
+---
+
+## Canvas System (IN PROGRESS)
+
+**WOW FACTOR Feature** - Transforms chat into powerful workspace:
+- 7 artifact types: REPORT, CHART, CONTENT_NAVIGATOR, DOCUMENT, TABLE, PRESENTATION, FORM
+- 64-piece TwinScience content (4 chapters × 4 episodes × 4 types)
+- Export to PDF/DOCX with client branding
+- Version control for artifacts
+- Template system (JSON TDL)
+
+**Backend:** ✅ Fully specified (104KB, 20+ API endpoints, 6 tables)  
+**Frontend:** 🏗️ In progress - vanilla JS with 3-mode layout
+
+**Current Implementation:**
+- Task 1/12: Building canvas layout system with mode switching
+
+---
+
 ## Future Enhancements
 - **Dashboard generation**: 4-zone visualization (spider charts, bubble charts, bullet charts, combo charts)
-- **Enhanced KG queries**: More sophisticated relationship traversal
+- **Enhanced KG queries**: More sophisticated relationship traversal  
 - **Predictive analytics**: Leverage temporal data for forecasting
 - **Real-time data ingestion**: API endpoints for continuous updates
 - **Vector search optimization**: HNSW index for faster similarity queries

@@ -9,6 +9,7 @@
     <title>JOSOOR - Transformation Analytics v2</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <link rel="stylesheet" href="/static/css/canvas.css">
     <style>
         * {
             margin: 0;
@@ -461,6 +462,28 @@
         .collapse-icon.expanded {
             transform: rotate(90deg);
         }
+        
+        /* Canvas Toggle Button */
+        .canvas-toggle-btn {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid white;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .canvas-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .canvas-toggle-btn.active {
+            background: white;
+            color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -715,5 +738,6 @@
             }
         }
     </script>
+    <script src="/static/js/canvas-manager.js"></script>
 </body>
 </html>
