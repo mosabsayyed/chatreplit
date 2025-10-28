@@ -706,6 +706,15 @@
                 const sanitizedHtml = DOMPurify.sanitize(rawHtml);
                 let content = sanitizedHtml;
                 
+                // Handle artifact creation in Canvas
+                if (data.artifact && typeof canvasManager !== 'undefined') {
+                    canvasManager.createArtifact(
+                        data.artifact.artifact_type,
+                        data.artifact.title,
+                        data.artifact.content
+                    );
+                }
+                
                 if (data.visualization && data.visualization.visualizations && data.visualization.visualizations.length > 0) {
                     data.visualization.visualizations.forEach(viz => {
                         content += `

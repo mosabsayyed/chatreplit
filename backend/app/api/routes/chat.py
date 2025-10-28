@@ -10,10 +10,111 @@ from app.utils.debug_logger import init_debug_logger
 router = APIRouter()
 
 
+def _generate_artifact_from_steps(query: str, steps: List[dict]) -> Optional[dict]:
+    """
+    Generate Canvas artifact from orchestrator steps
+    
+    Analyzes SQL results and creates appropriate artifact type:
+    - CHART: For numeric data that can be visualized
+    - TABLE: For tabular data listings
+    """
+    import re
+    
+    # Find SQL execution steps with data
+    sql_results = []
+    for step in steps:
+        if step.get("result", {}).get("data"):
+            sql_results.append(step["result"])
+    
+    if not sql_results:
+        return None
+    
+    # Use the last SQL result for artifact generation
+    last_result = sql_results[-1]
+    data = last_result.get("data", [])
+    
+    if not data or len(data) == 0:
+        return None
+    
+    # Detect if this should be a chart
+    first_row = data[0]
+    columns = list(first_row.keys())
+    
+    # Check for numeric columns
+    numeric_cols = []
+    text_col = None
+    for col in columns:
+        if col.lower() in ['id', 'year']:
+            continue
+        
+        try:
+            # Check if values are numeric
+            values = [row[col] for row in data if row.get(col) is not None]
+            if values and all(isinstance(v, (int, float)) for v in values):
+                numeric_cols.append(col)
+            elif not text_col:
+                text_col = col
+        except:
+            continue
+    
+    # If we have numeric data, create a chart
+    if numeric_cols and text_col and len(data) <= 20:
+        # Determine chart type based on query
+        chart_type = 'column'
+        if 'maturity' in query.lower() or 'capability' in query.lower():
+            chart_type = 'radar'
+        elif 'trend' in query.lower() or 'over time' in query.lower():
+            chart_type = 'line'
+        
+        # Build chart data
+        categories = [str(row[text_col]) for row in data]
+        series = []
+        
+        for col in numeric_cols[:3]:  # Max 3 series for readability
+            series.append({
+                "name": col.replace('_', ' ').title(),
+                "data": [float(row[col]) if row.get(col) is not None else 0 for row in data],
+                "pointPlacement": "on" if chart_type == 'radar' else None
+            })
+        
+        return {
+            "artifact_type": "CHART",
+            "title": f"{query[:50]}..." if len(query) > 50 else query,
+            "content": {
+                "type": chart_type,
+                "chart_title": query[:80],
+                "categories": categories,
+                "series": series,
+                "x_axis_label": text_col.replace('_', ' ').title(),
+                "y_axis_label": "Value",
+                "max_value": 5 if chart_type == 'radar' else None
+            },
+            "description": f"Chart showing {len(data)} results"
+        }
+    
+    # Otherwise, create a table artifact
+    return {
+        "artifact_type": "TABLE",
+        "title": f"{query[:50]}..." if len(query) > 50 else query,
+        "content": {
+            "columns": columns,
+            "data": data[:100]  # Limit to 100 rows for performance
+        },
+        "description": f"Table showing {len(data)} results"
+    }
+
+
 class ChatRequest(BaseModel):
     query: str
     conversation_id: Optional[int] = None
     persona: Optional[str] = "transformation_analyst"
+
+
+class Artifact(BaseModel):
+    artifact_type: str  # CHART, TABLE, REPORT, DOCUMENT
+    title: str
+    content: dict
+    description: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -21,6 +122,7 @@ class ChatResponse(BaseModel):
     message: str
     visualization: Optional[dict] = None
     insights: List[str] = []  # Changed from List[dict] to List[str]
+    artifact: Optional[Artifact] = None  # Canvas artifact
 
 
 class ConversationSummary(BaseModel):
@@ -253,6 +355,14 @@ async def send_message_v2(
         # Extract answer
         answer = result.get("answer", "I apologize, but I encountered an error processing your query.")
         
+        # Generate artifact from results
+        artifact_dict = None
+        steps_taken = result.get("steps_taken", [])
+        if steps_taken:
+            artifact_dict = _generate_artifact_from_steps(request.query, steps_taken)
+        
+        artifact = Artifact(**artifact_dict) if artifact_dict else None
+        
         # Store assistant response
         await run_in_threadpool(
             conversation_manager.add_message,
@@ -263,15 +373,17 @@ async def send_message_v2(
                 "orchestrator_version": "v2",
                 "steps_taken": result.get("steps_taken", []),
                 "total_iterations": result.get("total_iterations", 0),
-                "success": result.get("success", False)
+                "success": result.get("success", False),
+                "artifact": artifact.dict() if artifact else None
             }
         )
         
         return ChatResponse(
             conversation_id=conversation_id,
             message=answer,
-            visualization=None,  # Future: extract from function call results
-            insights=[]  # Future: extract key insights from results
+            visualization=None,
+            insights=[],
+            artifact=artifact
         )
     
     except Exception as e:
