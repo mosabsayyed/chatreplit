@@ -374,7 +374,7 @@ async def send_message_v2(
                 "steps_taken": result.get("steps_taken", []),
                 "total_iterations": result.get("total_iterations", 0),
                 "success": result.get("success", False),
-                "artifact": artifact.dict() if artifact else None
+                "artifact": artifact.model_dump() if artifact else None
             }
         )
         
