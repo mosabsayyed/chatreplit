@@ -375,8 +375,20 @@ async def send_message_v2(
     
     except Exception as e:
         import logging
+        import traceback
         logger = logging.getLogger(__name__)
         logger.error(f"orchestrator_v2_error: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        
+        # Print to stdout for debugging
+        print(f"\n{'='*80}")
+        print(f"V2 ORCHESTRATOR ERROR")
+        print(f"{'='*80}")
+        print(f"Error: {str(e)}")
+        print(f"\nFull Traceback:")
+        print(traceback.format_exc())
+        print(f"{'='*80}\n")
+        
         raise HTTPException(status_code=500, detail=str(e))
 
 

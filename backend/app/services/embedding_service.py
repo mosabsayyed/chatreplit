@@ -12,17 +12,17 @@ class EmbeddingService:
     """Service for generating OpenAI embeddings"""
     
     def __init__(self):
-        # Use the same API key pattern as llm_provider.py
-        # Supports Replit AI Integrations and standard OpenAI
-        api_key = os.getenv("AI_INTEGRATIONS_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY", "_DUMMY_API_KEY_")
-        base_url = os.getenv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1")
+        # EMBEDDINGS ONLY: Use user's OpenAI API key (NOT Replit AI Integrations)
+        # Replit AI Integration does NOT support embeddings API
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required for embeddings. Replit AI Integration does not support embeddings.")
         
-        # Fix for httpx version compatibility - don't pass None values
-        client_kwargs = {"api_key": api_key}
-        if base_url:
-            client_kwargs["base_url"] = base_url
-        
-        self.client = OpenAI(**client_kwargs)
+        # Always use standard OpenAI endpoint for embeddings
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.openai.com/v1"
+        )
         self.model = "text-embedding-ada-002"
         self.dimensions = 1536
     
