@@ -193,13 +193,12 @@ async def send_message(
             conversation_id = request.conversation_id
         else:
             # Create new conversation
-            conversation = await run_in_threadpool(
-                conversation_manager.create_conversation,
+            conversation = await conversation_manager.create_conversation(
                 user_id,
-                request.persona,
+                request.persona or "transformation_analyst",
                 request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
-            conversation_id = conversation.id
+            conversation_id = conversation['id']
         
         # Initialize debug logger AFTER we have the real conversation_id
         debug_logger = init_debug_logger(str(conversation_id))
@@ -299,7 +298,7 @@ async def send_message_v2(
         else:
             conversation = await conversation_manager.create_conversation(
                 user_id,
-                request.persona,
+                request.persona or "transformation_analyst",
                 request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
             conversation_id = conversation['id']
@@ -336,7 +335,8 @@ async def send_message_v2(
             orchestrator.process_query,
             request.query,
             conversation_history,
-            max_iterations=5
+            max_iterations=5,
+            data={}  # Add data parameter
         )
         
         # Log debug information
@@ -396,16 +396,20 @@ async def list_conversations(
     user_id = 1  # Demo user
     
     try:
-        conversations = conversation_manager.list_conversations(
+        conversations = await conversation_manager.list_conversations(
             user_id=user_id,
             limit=50
         )
         
         summaries = []
         for conv in conversations:
-            summary = conversation_manager.get_conversation_summary(conv.id)
-            if summary:
-                summaries.append(ConversationSummary(**summary))
+            summaries.append(ConversationSummary(
+                id=conv['id'],
+                title=conv['title'],
+                message_count=0,  # TODO: Add message count
+                created_at=conv['created_at'],
+                updated_at=conv['updated_at']
+            ))
         
         return ConversationListResponse(conversations=summaries)
     
@@ -422,7 +426,7 @@ async def get_conversation_detail(
     user_id = 1  # Demo user
     
     try:
-        conversation = conversation_manager.get_conversation(
+        conversation = await conversation_manager.get_conversation(
             conversation_id=conversation_id,
             user_id=user_id
         )
@@ -430,15 +434,21 @@ async def get_conversation_detail(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversation not found")
         
-        messages = conversation_manager.get_messages(conversation_id)
+        messages = await conversation_manager.get_messages(conversation_id)
         
         return ConversationDetailResponse(
             conversation={
-                "id": conversation.id,
-                "title": conversation.title,
-                "created_at": conversation.created_at.isoformat()
+                "id": conversation['id'],
+                "title": conversation['title'],
+                "created_at": conversation['created_at']
             },
-            messages=[MessageResponse(**msg.to_dict()) for msg in messages]
+            messages=[MessageResponse(
+                id=msg['id'],
+                role=msg['role'],
+                content=msg['content'],
+                created_at=msg['created_at'],
+                metadata=msg.get('extra_metadata')
+            ) for msg in messages]
         )
     
     except Exception as e:
@@ -454,7 +464,7 @@ async def delete_conversation(
     user_id = 1  # Demo user
     
     try:
-        deleted = conversation_manager.delete_conversation(
+        deleted = await conversation_manager.delete_conversation(
             conversation_id=conversation_id,
             user_id=user_id
         )
