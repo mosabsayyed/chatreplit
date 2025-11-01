@@ -1,15 +1,20 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from openai import OpenAI
 import os
 import json
 from app.config import settings
+
+try:
+    from anthropic import Anthropic
+except ImportError:
+    Anthropic = None
 
 class LLMProvider:
     """Switchable LLM provider supporting Replit AI Integrations, OpenAI, and Anthropic"""
     
     def __init__(self):
         self.provider = settings.LLM_PROVIDER
-        self.client = None
+        self.client: Optional[Union[OpenAI, Any]] = None
     
     def _get_client(self):
         """Lazy initialization of LLM client based on provider"""
@@ -30,11 +35,9 @@ class LLMProvider:
                 api_key = os.getenv("ANTHROPIC_API_KEY")
                 if not api_key:
                     raise ValueError("ANTHROPIC_API_KEY environment variable is required for Anthropic provider")
-                try:
-                    from anthropic import Anthropic
-                    self.client = Anthropic(api_key=api_key)
-                except ImportError:
+                if Anthropic is None:
                     raise ImportError("anthropic package is not installed. Install with: pip install anthropic")
+                self.client = Anthropic(api_key=api_key)
             
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}. Supported: replit, openai, anthropic")
@@ -74,23 +77,23 @@ class LLMProvider:
                 user_messages = [{"role": m["role"], "content": m["content"]} 
                                for m in messages if m["role"] != "system"]
                 
-                response = client.messages.create(
+                response = client.messages.create(  # type: ignore
                     model=model if "claude" in model else "claude-3-5-sonnet-20241022",
                     max_tokens=max_tokens,
                     temperature=temperature,
                     system=system_msg,
-                    messages=user_messages
+                    messages=user_messages  # type: ignore
                 )
-                return response.content[0].text
+                return str(response.content[0].text)
             
             else:
                 response = client.chat.completions.create(
                     model=model,
-                    messages=messages,
+                    messages=messages,  # type: ignore
                     temperature=temperature,
                     max_tokens=max_tokens
                 )
-                result = response.choices[0].message.content
+                result = response.choices[0].message.content or ""
                 
                 # DEBUG: Log response
                 if debug or os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
