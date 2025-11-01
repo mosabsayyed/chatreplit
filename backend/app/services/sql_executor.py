@@ -6,7 +6,7 @@ import psycopg2
 import psycopg2.extras
 from typing import Dict, Any, List, Optional
 from .composite_key_validator import CompositeKeyValidator
-from app.config.schema_loader import SchemaLoader
+from .schema_loader import SchemaLoader
 import os
 
 class SQLExecutorService:
