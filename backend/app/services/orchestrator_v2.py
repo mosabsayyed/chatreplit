@@ -79,6 +79,28 @@ COMPOSITE KEY RULES:
 - ALWAYS join on BOTH id AND year: ON a.id = b.parent_id AND a.year = b.year
 - Never join on ID alone
 
+CRITICAL SQL EXAMPLES:
+
+Example 1 - Simple Join:
+```sql
+SELECT p.* 
+FROM ent_projects p
+JOIN jt_project_capabilities pc 
+    ON p.id = pc.project_id AND p.year = pc.project_year
+WHERE p.id = 'PRJ001' AND p.year = 2024;
+```
+
+Example 2 - Multi-Hop:
+```sql
+SELECT r.* 
+FROM ent_projects p
+JOIN jt_project_it_systems pits ON p.id = pits.project_id AND p.year = pits.project_year
+JOIN ent_it_systems its ON pits.it_system_id = its.id AND pits.it_system_year = its.year
+JOIN jt_it_system_risks itsr ON its.id = itsr.it_system_id AND its.year = itsr.it_system_year
+JOIN sec_risks r ON itsr.risk_id = r.id AND itsr.risk_year = r.year
+WHERE p.id = 'PRJ001' AND p.year = 2024;
+```
+
 CURRENT YEAR: 2025
 
 Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
@@ -103,6 +125,66 @@ Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
                 "function": {
                     "name": "search_schema",
                     "description": "Search database schema for relevant tables, columns, and relationships using semantic similarity",
+
+
+    def _pre_process_context(
+        self,
+        user_query: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Pre-process user query to extract:
+        - Resolved entity references from conversation history
+        - Suggested worldview chains based on query intent
+        - Temporal context (year mentions)
+        
+        This reduces LLM's cognitive load and improves accuracy.
+        """
+        context = {
+            "resolved_entities": [],
+            "suggested_chains": [],
+            "temporal_hints": {"year": 2025}
+        }
+        
+        # 1. Entity reference resolution
+        if conversation_history:
+            # Look for "that project", "it", "the entity" in user_query
+            reference_keywords = ["that", "it", "the", "this", "previous"]
+            has_reference = any(kw in user_query.lower() for kw in reference_keywords)
+            
+            if has_reference:
+                # Search last 3 conversation turns for entity mentions
+                for msg in reversed(conversation_history[-3:]):
+                    if msg.get("role") == "assistant":
+                        # Extract entities from assistant's previous response
+                        # Look for patterns like "Project PRJ001" or "id: PRJ001"
+                        import re
+                        entity_pattern = r"(PRJ|CAP|OBJ|RSK|ENT)\d+"
+                        matches = re.findall(entity_pattern, msg.get("content", ""))
+                        if matches:
+                            context["resolved_entities"].append({
+                                "id": matches[0],
+                                "source": "conversation_history"
+                            })
+                            break
+        
+        # 2. Chain suggestion based on query keywords
+        query_lower = user_query.lower()
+        if "risk" in query_lower and "project" in query_lower:
+            context["suggested_chains"] = ["2A_Strategy_to_Tactics_Tools", "4_Risk_Build"]
+        elif "capability" in query_lower and "project" in query_lower:
+            context["suggested_chains"] = ["2A_Strategy_to_Tactics_Tools"]
+        elif "performance" in query_lower:
+            context["suggested_chains"] = ["1_SectorOps", "2B_Strategy_to_Tactics_Perf"]
+        
+        # 3. Temporal hints
+        import re
+        year_matches = re.findall(r"\b(202\d)\b", user_query)
+        if year_matches:
+            context["temporal_hints"]["year"] = int(year_matches[0])
+        
+        return context
+
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -312,10 +394,23 @@ Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
         # Build messages
         messages = []
         
+        # Pre-process context BEFORE LLM call
+        pre_context = self._pre_process_context(user_query, conversation_history)
+        
+        # Enhance system prompt with pre-processed context
+        enhanced_prompt = self.SYSTEM_PROMPT + f"""
+
+## PRE-RESOLVED CONTEXT
+Resolved Entities: {pre_context['resolved_entities']}
+Suggested Chains: {pre_context['suggested_chains']}
+Temporal Context: {pre_context['temporal_hints']}
+
+Use this context to make faster, more accurate decisions."""
+        
         # Add system prompt
         messages.append({
             "role": "system",
-            "content": self.SYSTEM_PROMPT
+            "content": enhanced_prompt
         })
         
         # Add conversation history if provided
