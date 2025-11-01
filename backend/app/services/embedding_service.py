@@ -17,7 +17,12 @@ class EmbeddingService:
         api_key = os.getenv("AI_INTEGRATIONS_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY", "_DUMMY_API_KEY_")
         base_url = os.getenv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1")
         
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        # Fix for httpx version compatibility - don't pass None values
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        
+        self.client = OpenAI(**client_kwargs)
         self.model = "text-embedding-ada-002"
         self.dimensions = 1536
     

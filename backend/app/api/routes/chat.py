@@ -335,20 +335,10 @@ async def send_message_v2(
             orchestrator.process_query,
             request.query,
             conversation_history,
-            max_iterations=5,
-            data={}  # Add data parameter
+            max_iterations=5
         )
         
-        # Log debug information
-        debug_logger.log_layer(
-            "orchestrator_v2",
-            {
-                "success": result.get("success", False),
-                "iterations": result.get("total_iterations", 0),
-                "steps_taken": result.get("steps_taken", []),
-                "debug_log": result.get("debug_log", [])
-            }
-        )
+        # Note: Debug logging removed for V2 - orchestrator already logs internally
         
         # Extract answer
         answer = result.get("answer", "I apologize, but I encountered an error processing your query.")
@@ -384,7 +374,9 @@ async def send_message_v2(
         )
     
     except Exception as e:
-        debug_logger.log_error("orchestrator_v2_error", str(e))
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"orchestrator_v2_error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
