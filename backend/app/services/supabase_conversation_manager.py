@@ -11,8 +11,8 @@ class SupabaseConversationManager:
         self,
         user_id: int,
         persona_name: str = "transformation_analyst",
-        title: str = None
-    ) -> Dict[str, Any]:
+        title: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         personas = await self.client.table_select('personas', '*', {'name': persona_name})
         if not personas:
             raise ValueError(f"Persona '{persona_name}' not found. Please seed personas first.")
@@ -71,8 +71,8 @@ class SupabaseConversationManager:
         conversation_id: int,
         role: str,
         content: str,
-        metadata: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         message_data = {
             'conversation_id': conversation_id,
             'role': role,

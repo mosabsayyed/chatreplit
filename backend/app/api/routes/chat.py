@@ -170,21 +170,15 @@ async def send_message(
     4. Stores agent response
     5. Returns response with conversation_id
     """
-    
-    from starlette.concurrency import run_in_threadpool
-    
     # For MVP: Use demo user (id=1)
     # TODO: Replace with JWT authentication
     user_id = 1
     
     try:
-        # CRITICAL FIX: Run synchronous SQLAlchemy in threadpool to avoid blocking event loop
-        
         # Get or create conversation
         if request.conversation_id:
             # Verify conversation exists and belongs to user
-            conversation = await run_in_threadpool(
-                conversation_manager.get_conversation,
+            conversation = await conversation_manager.get_conversation(
                 request.conversation_id,
                 user_id
             )
@@ -198,14 +192,15 @@ async def send_message(
                 request.persona or "transformation_analyst",
                 request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
+            if not conversation:
+                raise HTTPException(status_code=500, detail="Failed to create conversation")
             conversation_id = conversation['id']
         
         # Initialize debug logger AFTER we have the real conversation_id
         debug_logger = init_debug_logger(str(conversation_id))
         
         # Store user message
-        await run_in_threadpool(
-            conversation_manager.add_message,
+        await conversation_manager.add_message(
             conversation_id,
             "user",
             request.query,
@@ -213,8 +208,7 @@ async def send_message(
         )
         
         # Build conversation context for agent (THE MAGIC!)
-        conversation_context = await run_in_threadpool(
-            conversation_manager.build_conversation_context,
+        conversation_context = await conversation_manager.build_conversation_context(
             conversation_id,
             10
         )
@@ -238,8 +232,7 @@ async def send_message(
             visualizations_data = [v.model_dump() for v in agent_response.visualizations]
         
         # Store agent response with rich metadata
-        await run_in_threadpool(
-            conversation_manager.add_message,
+        await conversation_manager.add_message(
             conversation_id,
             "assistant",
             agent_response.narrative,
@@ -301,6 +294,8 @@ async def send_message_v2(
                 request.persona or "transformation_analyst",
                 request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
+            if not conversation:
+                raise HTTPException(status_code=500, detail="Failed to create conversation")
             conversation_id = conversation['id']
         
         # Initialize debug logger
