@@ -42,7 +42,7 @@ externalPort = 3000
 [userenv]
 
 [userenv.shared]
-SUPABASE_CONN = "postgresql://postgres:Coolking123?@db.ojlfhkrobyqmifqbgcyw.supabase.co:5432/postgres"
+SUPABASE_CONN = "postgresql://postgres:Coolking123%3F@db.ojlfhkrobyqmifqbgcyw.supabase.co:5432/postgres"
 SUPABASE_URL = "https://ojlfhkrobyqmifqbgcyw.supabase.co"
 SUPABASE_PUBLIC_URL = "https://ojlfhkrobyqmifqbgcyw.supabase.co"
 SUPABASE_HOST = "db.ojlfhkrobyqmifqbgcyw.supabase.co"
@@ -54,4 +54,4 @@ NEO4J_USERNAME = "neo4j"
 NEO4J_DATABASE = "neo4j"
 AURA_INSTANCEID = "5b733bdd"
 AURA_INSTANCENAME = "Trial instance"
-DATABASE_URL = "postgresql://postgres:Coolking123?@db.ojlfhkrobyqmifqbgcyw.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:Coolking123%3F@db.ojlfhkrobyqmifqbgcyw.supabase.co:5432/postgres"

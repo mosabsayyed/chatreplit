@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
-from app.api.v1 import health
+from app.api.v1 import health, setup
 from app.api.routes import chat, debug, embeddings
 from app.db.postgres_client import postgres_client
 import os
@@ -32,6 +32,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
+app.include_router(setup.router, prefix="/api/v1/setup", tags=["Setup"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(debug.router, prefix="/api/v1", tags=["Debug"])
 app.include_router(embeddings.router, prefix="/api/v1/embeddings", tags=["Embeddings"])

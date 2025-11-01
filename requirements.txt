@@ -7,3 +7,5 @@ pgvector
 psycopg2-binary
 sqlparse
 python-multipart
+neo4j
+neo4j
