@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.services.semantic_search import SemanticSearchService
 from app.services.sql_executor import SQLExecutorService
 from app.services.llm_provider import LLMProvider
+from app.services.neo4j_service import neo4j_service
 from app.models.function_calling import (
     SemanticSearchSchemaInput,
     SemanticSearchEntitiesInput,
@@ -28,23 +29,26 @@ from app.config import settings
 
 class OrchestratorV2:
     """
-    Single-layer LLM orchestrator using pgvector semantic search
+    ENHANCED - Single-layer LLM orchestrator with DUAL DATABASE support
     
     Architecture:
-        User Query → LLM with function calling → semantic_search/execute_sql → Response
+        User Query → LLM with function calling → pgvector + Neo4j + SQL → Response
         
     Benefits:
         - 75% cost reduction (1 LLM call vs 4)
+        - Graph traversal for complex multi-hop queries
         - Faster response times
         - Structured outputs guaranteed via Pydantic
         - Function calling for tool orchestration
     """
     
-    SYSTEM_PROMPT = """You are JOSOOR, an enterprise transformation analytics assistant.
+    SYSTEM_PROMPT = """You are JOSOOR, an enterprise transformation analytics assistant with dual database capabilities.
 
-Your role is to help users analyze transformation data using semantic search and SQL queries.
+Your role is to help users analyze transformation data using semantic search, SQL queries, and graph traversal.
 
 AVAILABLE TOOLS:
+
+**Vector Search Tools (pgvector on Supabase):**
 
 1. search_schema(query, top_k) - Find relevant database tables, columns, and relationships
    - Use when user asks about available data or schema discovery
@@ -55,33 +59,59 @@ AVAILABLE TOOLS:
    - entity_type options: project, capability, objective, risk, strategy, tactic, it_system, entity
    - Returns exact IDs and years for SQL queries
 
+**SQL Tools (Supabase PostgreSQL):**
+
 3. execute_sql(sql, validate, max_rows) - Execute SQL queries with composite key validation
+   - USE FOR: Simple queries (1-2 hops), aggregations, filtering, data retrieval
    - CRITICAL: All JOINs and WHERE clauses on ID columns MUST include year
-   - Example: JOIN ent_capabilities c ON p.id = c.project_id AND p.year = c.year
-   - Use after finding entities or schema to fetch actual data
+   - Example: "Show all projects in 2024", "Count active capabilities"
 
 4. execute_simple_query(table_name, filters, columns, max_rows) - Simple filter-based queries
-   - Use for straightforward single-table queries
+   - USE FOR: Basic lookups on single tables
    - Example: table_name="ent_projects", filters={"year": 2027, "status": "active"}
 
-WORKFLOW:
+**Graph Tools (Neo4j - for complex relationship queries):**
+
+5. graph_walk(start_node, relationship_types, max_depth) - Walk graph relationships from a starting node
+   - USE FOR: Complex multi-hop traversal (3-5+ hops), relationship exploration
+   - EXAMPLE: "Find all risks affecting capabilities through projects and IT systems"
+   - RETURNS: Paths with nodes, relationships, and connectivity data
+   - start_node format: {id: "PRJ001", year: 2024, type: "Project"}
+   - relationship_types: ["HAS_CAPABILITY", "SUPPORTED_BY_IT_SYSTEM", "HAS_RISK"]
+
+6. graph_search(pattern, filters, limit) - Find matching patterns in graph
+   - USE FOR: Exploratory queries, pattern discovery
+   - EXAMPLE: "Find all projects with high-risk IT systems"
+   - RETURNS: Matching subgraphs with metadata
+   - pattern format: "(p:Project)-[:HAS_RISK]->(r:Risk)"
+
+**DECISION RULES:**
+
+- Simple Query (1-2 hops, aggregations)? → execute_sql or execute_simple_query
+- Complex Query (3+ hops, relationship exploration)? → graph_walk
+- Pattern Discovery (finding connections)? → graph_search
+- Schema Discovery? → search_schema
+- Entity Resolution (fuzzy search)? → search_entities
+
+**WORKFLOW:**
 
 1. User asks a question
-2. Determine what tools to call:
-   - Schema discovery? → search_schema()
-   - Find specific entities? → search_entities()
-   - Get data? → execute_sql() or execute_simple_query()
+2. Determine query complexity:
+   - Simple data retrieval → SQL tools
+   - Multi-hop relationships → Graph tools
+   - Need entity IDs first? → search_entities, then SQL or graph
 3. Call tools in parallel when possible
 4. Synthesize results into clear, concise answer
 
-COMPOSITE KEY RULES:
+**COMPOSITE KEY RULES:**
 - Tables use (id, year) composite primary keys
-- ALWAYS join on BOTH id AND year: ON a.id = b.parent_id AND a.year = b.year
+- SQL: ALWAYS join on BOTH id AND year: ON a.id = b.parent_id AND a.year = b.year
+- Neo4j: All relationships include year property: MATCH (p)-[:HAS_CAPABILITY {year: 2024}]->(c)
 - Never join on ID alone
 
-CRITICAL SQL EXAMPLES:
+**CRITICAL EXAMPLES:**
 
-Example 1 - Simple Join:
+SQL Example (Simple 1-2 hop):
 ```sql
 SELECT p.* 
 FROM ent_projects p
@@ -90,20 +120,20 @@ JOIN jt_project_capabilities pc
 WHERE p.id = 'PRJ001' AND p.year = 2024;
 ```
 
-Example 2 - Multi-Hop:
-```sql
-SELECT r.* 
-FROM ent_projects p
-JOIN jt_project_it_systems pits ON p.id = pits.project_id AND p.year = pits.project_year
-JOIN ent_it_systems its ON pits.it_system_id = its.id AND pits.it_system_year = its.year
-JOIN jt_it_system_risks itsr ON its.id = itsr.it_system_id AND its.year = itsr.it_system_year
-JOIN sec_risks r ON itsr.risk_id = r.id AND itsr.risk_year = r.year
-WHERE p.id = 'PRJ001' AND p.year = 2024;
+Graph Example (Complex 3+ hop):
+```python
+graph_walk(
+    start_node={"id": "PRJ001", "year": 2024, "type": "Project"},
+    relationship_types=["HAS_CAPABILITY", "SUPPORTED_BY_IT_SYSTEM", "HAS_RISK"],
+    max_depth=5
+)
 ```
+
+**NOTE:** Neo4j may not always be available. If graph tools fail, fall back to SQL for the same query.
 
 CURRENT YEAR: 2025
 
-Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
+Be precise, helpful, and choose the right tool for each query complexity level."""
 
     def __init__(self):
         """Initialize orchestrator with required services"""
@@ -225,6 +255,66 @@ Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
                             }
                         },
                         "required": ["table_name", "filters"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "graph_walk",
+                    "description": "Walk graph relationships for complex multi-hop traversal (3-5+ hops). Use when user asks about relationships across multiple entities. Requires Neo4j to be available.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "start_node": {
+                                "type": "object",
+                                "description": "Starting node with id, year, type (e.g., {id: 'PRJ001', year: 2024, type: 'Project'})",
+                                "properties": {
+                                    "id": {"type": "string"},
+                                    "year": {"type": "integer"},
+                                    "type": {"type": "string", "description": "Node type: Project, Capability, Risk, ITSystem, etc."}
+                                },
+                                "required": ["id", "year", "type"]
+                            },
+                            "relationship_types": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of relationship types to follow: HAS_CAPABILITY, SUPPORTED_BY_IT_SYSTEM, HAS_RISK, etc."
+                            },
+                            "max_depth": {
+                                "type": "integer",
+                                "description": "Maximum number of hops (default: 5)",
+                                "default": 5
+                            }
+                        },
+                        "required": ["start_node", "relationship_types"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "graph_search",
+                    "description": "Search for matching patterns in graph. Use for exploratory queries and pattern discovery. Requires Neo4j to be available.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "pattern": {
+                                "type": "string",
+                                "description": "Cypher pattern like '(p:Project)-[:HAS_RISK]->(r:Risk)'"
+                            },
+                            "filters": {
+                                "type": "object",
+                                "description": "Property filters e.g., {year: 2024, status: 'active'}",
+                                "additionalProperties": True
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum results to return",
+                                "default": 100
+                            }
+                        },
+                        "required": ["pattern"]
                     }
                 }
             }
@@ -351,6 +441,36 @@ Be precise, helpful, and leverage semantic search to handle fuzzy queries."""
                     "error": result.get("error"),
                     "table": input_model.table_name
                 }
+            
+            elif function_name == "graph_walk":
+                if not neo4j_service.is_available():
+                    return {
+                        "success": False,
+                        "error": "Neo4j not available. Please use SQL tools for this query.",
+                        "fallback_suggestion": "Try using execute_sql with JOIN statements instead"
+                    }
+                
+                result = neo4j_service.graph_walk(
+                    start_node=arguments['start_node'],
+                    relationship_types=arguments['relationship_types'],
+                    max_depth=arguments.get('max_depth', 5)
+                )
+                return result
+            
+            elif function_name == "graph_search":
+                if not neo4j_service.is_available():
+                    return {
+                        "success": False,
+                        "error": "Neo4j not available. Please use SQL tools for this query.",
+                        "fallback_suggestion": "Try using execute_sql with JOIN statements instead"
+                    }
+                
+                result = neo4j_service.graph_search(
+                    pattern=arguments['pattern'],
+                    filters=arguments.get('filters'),
+                    limit=arguments.get('limit', 100)
+                )
+                return result
             
             else:
                 return {
