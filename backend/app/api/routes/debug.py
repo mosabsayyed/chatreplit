@@ -39,3 +39,24 @@ async def get_debug_status():
         "debug_enabled": enabled,
         "message": "Debug logs visible in server console" if enabled else "Debug mode disabled"
     }
+
+@router.get("/debug/database-config")
+async def get_database_config():
+    """Check which database the server is connected to"""
+    from app.config import settings
+    
+    # Test the logic directly
+    test_value = os.getenv("SUPABASE_HOST") or os.getenv("PGHOST", "localhost")
+    
+    return {
+        "settings_PGHOST": settings.PGHOST,
+        "settings_PGPORT": settings.PGPORT,
+        "settings_PGDATABASE": settings.PGDATABASE,
+        "settings_PGUSER": settings.PGUSER,
+        "env_SUPABASE_HOST": os.getenv("SUPABASE_HOST"),
+        "env_PGHOST": os.getenv("PGHOST"),
+        "env_SUPABASE_PORT": os.getenv("SUPABASE_PORT"),
+        "env_SUPABASE_DATABASE": os.getenv("SUPABASE_DATABASE"),
+        "env_SUPABASE_USER": os.getenv("SUPABASE_USER"),
+        "test_logic_result": test_value
+    }
