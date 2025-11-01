@@ -38,3 +38,20 @@ externalPort = 80
 [[ports]]
 localPort = 46265
 externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+SUPABASE_CONN = "postgresql://postgres:Coolking123?@db.ojlfhkrobyqmifqbgcyw.supabase.co:5432/postgres"
+SUPABASE_URL = "https://ojlfhkrobyqmifqbgcyw.supabase.co"
+SUPABASE_PUBLIC_URL = "https://ojlfhkrobyqmifqbgcyw.supabase.co"
+SUPABASE_HOST = "db.ojlfhkrobyqmifqbgcyw.supabase.co"
+SUPABASE_PORT = "5432"
+SUPABASE_DATABASE = "postgres"
+SUPABASE_USER = "postgres"
+NEO4J_URI = "neo4j+s://03caf68a.databases.neo4j.io"
+NEO4J_USERNAME = "neo4j"
+NEO4J_DATABASE = "neo4j"
+AURA_INSTANCEID = "5b733bdd"
+AURA_INSTANCENAME = "Trial instance"
+DATABASE_URL = "postgresql://postgres:Coolking123?@db.ojlfhkrobyqmifqbgcyw.supabase.co:5432/postgres"
