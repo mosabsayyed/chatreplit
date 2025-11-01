@@ -158,7 +158,7 @@ class ConversationDetailResponse(BaseModel):
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
-    db: Session = Depends(get_db)
+    conversation_manager: SupabaseConversationManager = Depends(get_conversation_manager)
 ):
     """
     Send message and get AI response with conversation memory
@@ -172,8 +172,6 @@ async def send_message(
     """
     
     from starlette.concurrency import run_in_threadpool
-    
-    conversation_manager = ConversationManager(db)
     
     # For MVP: Use demo user (id=1)
     # TODO: Replace with JWT authentication
@@ -392,11 +390,9 @@ async def send_message_v2(
 
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
-    db: Session = Depends(get_db)
+    conversation_manager: SupabaseConversationManager = Depends(get_conversation_manager)
 ):
     """List all conversations for current user"""
-    
-    conversation_manager = ConversationManager(db)
     user_id = 1  # Demo user
     
     try:
@@ -420,11 +416,9 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}", response_model=ConversationDetailResponse)
 async def get_conversation_detail(
     conversation_id: int,
-    db: Session = Depends(get_db)
+    conversation_manager: SupabaseConversationManager = Depends(get_conversation_manager)
 ):
     """Get conversation with all messages"""
-    
-    conversation_manager = ConversationManager(db)
     user_id = 1  # Demo user
     
     try:
@@ -454,11 +448,9 @@ async def get_conversation_detail(
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: int,
-    db: Session = Depends(get_db)
+    conversation_manager: SupabaseConversationManager = Depends(get_conversation_manager)
 ):
     """Delete a conversation"""
-    
-    conversation_manager = ConversationManager(db)
     user_id = 1  # Demo user
     
     try:
