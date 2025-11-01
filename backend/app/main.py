@@ -5,16 +5,16 @@ from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from app.api.v1 import health, setup
 from app.api.routes import chat, debug, embeddings
-from app.db.postgres_client import postgres_client
+from app.db.supabase_client import supabase_client
 import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await postgres_client.connect()
-    print("✅ Database connected successfully")
+    await supabase_client.connect()
+    print("✅ Supabase connected successfully via REST API")
     yield
-    await postgres_client.disconnect()
-    print("👋 Database disconnected")
+    await supabase_client.disconnect()
+    print("👋 Supabase disconnected")
 
 app = FastAPI(
     title="JOSOOR - Transformation Analytics Platform",

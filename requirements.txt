@@ -9,3 +9,4 @@ sqlparse
 python-multipart
 neo4j
 neo4j
+supabase
