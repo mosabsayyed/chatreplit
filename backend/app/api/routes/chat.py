@@ -2,12 +2,17 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
-from sqlalchemy.orm import Session
-from app.db.sqlalchemy_session import get_db
-from app.services.conversation_manager import ConversationManager
+from app.db.supabase_client import supabase_client
+from app.services.supabase_conversation_manager import SupabaseConversationManager
 from app.utils.debug_logger import init_debug_logger
 
 router = APIRouter()
+
+
+async def get_conversation_manager() -> SupabaseConversationManager:
+    """Dependency to get Supabase conversation manager"""
+    await supabase_client.connect()
+    return SupabaseConversationManager(supabase_client)
 
 
 def _generate_artifact_from_steps(query: str, steps: List[dict]) -> Optional[dict]:
@@ -267,7 +272,7 @@ async def send_message(
 @router.post("/message/v2", response_model=ChatResponse)
 async def send_message_v2(
     request: ChatRequest,
-    db: Session = Depends(get_db)
+    conversation_manager: SupabaseConversationManager = Depends(get_conversation_manager)
 ):
     """
     V2 Chat Endpoint - Single-layer LLM with pgvector semantic search
@@ -281,14 +286,12 @@ async def send_message_v2(
     from starlette.concurrency import run_in_threadpool
     from app.services.orchestrator_v2 import OrchestratorV2
     
-    conversation_manager = ConversationManager(db)
     user_id = 1  # Demo user (TODO: JWT auth)
     
     try:
         # Get or create conversation
         if request.conversation_id:
-            conversation = await run_in_threadpool(
-                conversation_manager.get_conversation,
+            conversation = await conversation_manager.get_conversation(
                 request.conversation_id,
                 user_id
             )
@@ -296,28 +299,25 @@ async def send_message_v2(
                 raise HTTPException(status_code=404, detail="Conversation not found")
             conversation_id = request.conversation_id
         else:
-            conversation = await run_in_threadpool(
-                conversation_manager.create_conversation,
+            conversation = await conversation_manager.create_conversation(
                 user_id,
                 request.persona,
                 request.query[:50] + ("..." if len(request.query) > 50 else "")
             )
-            conversation_id = conversation.id
+            conversation_id = conversation['id']
         
         # Initialize debug logger
         debug_logger = init_debug_logger(str(conversation_id))
         
         # Store user message
-        await run_in_threadpool(
-            conversation_manager.add_message,
+        await conversation_manager.add_message(
             conversation_id,
             "user",
             request.query
         )
         
         # Build conversation history in OpenAI format
-        messages = await run_in_threadpool(
-            conversation_manager.get_messages,
+        messages = await conversation_manager.get_messages(
             conversation_id,
             limit=20  # Last 20 messages for context
         )
@@ -326,8 +326,8 @@ async def send_message_v2(
         conversation_history = []
         for msg in messages[:-1]:  # Exclude the message we just added
             conversation_history.append({
-                "role": msg.role,
-                "content": msg.content
+                "role": msg['role'],
+                "content": msg['content']
             })
         
         # Initialize orchestrator and process query
@@ -364,8 +364,7 @@ async def send_message_v2(
         artifact = Artifact(**artifact_dict) if artifact_dict else None
         
         # Store assistant response
-        await run_in_threadpool(
-            conversation_manager.add_message,
+        await conversation_manager.add_message(
             conversation_id,
             "assistant",
             answer,
