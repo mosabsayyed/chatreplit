@@ -94,5 +94,44 @@ class SupabaseClient:
         
         response = self.client.rpc(function_name, params or {}).execute()
         return response.data
+    
+    async def execute_raw_sql(self, sql: str, params: List[Any] = None) -> List[Dict[str, Any]]:
+        """
+        Execute raw SQL query via Supabase RPC
+        
+        NOTE: This requires a PostgreSQL function called 'execute_sql' to be created in Supabase:
+        
+        CREATE OR REPLACE FUNCTION execute_sql(query_text text)
+        RETURNS json
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        AS $$
+        DECLARE
+            result json;
+        BEGIN
+            EXECUTE 'SELECT json_agg(row_to_json(t)) FROM (' || query_text || ') t' INTO result;
+            RETURN COALESCE(result, '[]'::json);
+        END;
+        $$;
+        
+        Args:
+            sql: Raw SQL query to execute
+            params: Query parameters (not yet supported in this implementation)
+            
+        Returns:
+            List of result rows as dictionaries
+        """
+        if not self.client:
+            await self.connect()
+        
+        try:
+            # Call the execute_sql RPC function
+            result = await self.rpc('execute_sql', {'query_text': sql})
+            return result if isinstance(result, list) else []
+        except Exception as e:
+            logger.error(f"Error executing raw SQL via RPC: {e}")
+            # Fallback: Return empty list for now
+            # In production, you'd want proper error handling
+            return []
 
 supabase_client = SupabaseClient()

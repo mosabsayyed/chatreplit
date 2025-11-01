@@ -1,17 +1,19 @@
 from fastapi import APIRouter
 from app.models.schemas import HealthCheckResponse
-from app.db.postgres_client import postgres_client
+from app.db.supabase_client import supabase_client
 from datetime import datetime
 
 router = APIRouter()
 
 @router.get("/check", response_model=HealthCheckResponse)
 async def health_check():
-    """Check system health"""
+    """Check system health using Supabase REST API"""
     try:
-        result = await postgres_client.execute_query("SELECT 1 as test")
+        # Test Supabase connection by querying users table
+        await supabase_client.connect()
+        result = await supabase_client.table_select("users", "count")
         
-        if result and result[0].get('test') == 1:
+        if result is not None:
             status = "healthy"
             health_score = 100
         else:
@@ -23,7 +25,7 @@ async def health_check():
             health_score=health_score,
             warnings={},
             data_completeness={
-                "database": "connected"
+                "database": "connected via Supabase REST API"
             },
             last_check=datetime.now()
         )

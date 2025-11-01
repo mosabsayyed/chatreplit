@@ -1,24 +1,20 @@
 """
 SQL Executor Service
-Validates and executes SQL queries with composite key enforcement
+Validates and executes SQL queries with composite key enforcement via Supabase REST API
 """
-import psycopg2
-import psycopg2.extras
 from typing import Dict, Any, List, Optional
 from .composite_key_validator import CompositeKeyValidator
 from .schema_loader import SchemaLoader
-import os
+from app.db.supabase_client import supabase_client
+import asyncio
 
 class SQLExecutorService:
-    """Service to execute validated SQL queries"""
+    """Service to execute validated SQL queries via Supabase REST API"""
     
     def __init__(self):
         self.schema_loader = SchemaLoader()
         self.validator = None
-    
-    def get_db_connection(self):
-        """Get database connection"""
-        return psycopg2.connect(os.environ.get("DATABASE_URL"))
+        self.supabase = supabase_client
     
     def _ensure_validator(self):
         """Lazy load the composite key validator"""
@@ -37,7 +33,6 @@ class SQLExecutorService:
             Dict with is_valid, errors, warnings
         """
         self._ensure_validator()
-        # Wrap SQL in a simple dict format expected by validator
         sql_dict = {"sql": sql}
         return self.validator.validate_query(sql_dict)
     
@@ -48,7 +43,7 @@ class SQLExecutorService:
         max_rows: int = 1000
     ) -> Dict[str, Any]:
         """
-        Execute a SQL query with validation and error handling
+        Execute a SQL query with validation and error handling via Supabase REST API
         
         Args:
             sql: SQL query to execute
@@ -58,6 +53,22 @@ class SQLExecutorService:
         Returns:
             Dict with success, data, error, validation_result
         """
+        loop = None
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        return loop.run_until_complete(self._execute_query_async(sql, validate, max_rows))
+    
+    async def _execute_query_async(
+        self,
+        sql: str,
+        validate: bool = True,
+        max_rows: int = 1000
+    ) -> Dict[str, Any]:
+        """Async implementation of execute_query"""
         result = {
             "success": False,
             "data": None,
@@ -67,7 +78,6 @@ class SQLExecutorService:
             "sql": sql
         }
         
-        # Validate SQL if requested
         if validate:
             validation = self.validate_sql(sql)
             result["validation_result"] = validation
@@ -76,30 +86,22 @@ class SQLExecutorService:
                 result["error"] = f"SQL validation failed: {'; '.join(validation['errors'])}"
                 return result
         
-        # Execute query
-        conn = self.get_db_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
         try:
-            cursor.execute(sql)
+            sql_with_limit = sql.strip()
+            if not sql_with_limit.upper().endswith(')') and 'LIMIT' not in sql_with_limit.upper():
+                sql_with_limit += f" LIMIT {max_rows}"
             
-            # Fetch results
-            rows = cursor.fetchmany(max_rows)
-            result["data"] = [dict(row) for row in rows]
-            result["row_count"] = len(rows)
+            rows = await self.supabase.execute_raw_sql(sql_with_limit)
+            
+            result["data"] = rows if isinstance(rows, list) else []
+            result["row_count"] = len(result["data"]) if result["data"] else 0
             result["success"] = True
             
             return result
             
-        except psycopg2.Error as e:
-            result["error"] = f"Database error: {str(e)}"
-            return result
         except Exception as e:
             result["error"] = f"Execution error: {str(e)}"
             return result
-        finally:
-            cursor.close()
-            conn.close()
     
     def execute_simple_filter_query(
         self,
@@ -109,8 +111,7 @@ class SQLExecutorService:
         max_rows: int = 1000
     ) -> Dict[str, Any]:
         """
-        Execute a simple SELECT query with WHERE filters
-        Builds SQL deterministically for general queries
+        Execute a simple SELECT query with WHERE filters via Supabase REST API
         
         Args:
             table_name: Table to query
@@ -121,62 +122,44 @@ class SQLExecutorService:
         Returns:
             Query execution result
         """
-        # Build SELECT clause
-        if columns:
-            select_clause = ", ".join(columns)
-        else:
-            select_clause = "*"
+        loop = None
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         
-        # Build WHERE clause
-        where_clauses = []
-        params = []
-        
-        for column, value in filters.items():
-            if value is not None:
-                where_clauses.append(f"{column} = %s")
-                params.append(value)
-        
-        sql = f"SELECT {select_clause} FROM {table_name}"
-        
-        if where_clauses:
-            sql += " WHERE " + " AND ".join(where_clauses)
-        
-        # Add ORDER BY for consistent results
-        sql += " ORDER BY id, year"
-        
-        # Add LIMIT
-        sql += f" LIMIT {max_rows}"
-        
-        # Execute with parameters
-        conn = self.get_db_connection()
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
+        return loop.run_until_complete(
+            self._execute_simple_filter_query_async(table_name, filters, columns, max_rows)
+        )
+    
+    async def _execute_simple_filter_query_async(
+        self,
+        table_name: str,
+        filters: Dict[str, Any],
+        columns: Optional[List[str]] = None,
+        max_rows: int = 1000
+    ) -> Dict[str, Any]:
+        """Async implementation of execute_simple_filter_query"""
         result = {
             "success": False,
             "data": None,
             "row_count": 0,
-            "error": None,
-            "sql": cursor.mogrify(sql, params).decode() if params else sql
+            "error": None
         }
         
         try:
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
-            result["data"] = [dict(row) for row in rows]
-            result["row_count"] = len(rows)
+            column_str = "*" if not columns else ",".join(columns)
+            rows = await self.supabase.table_select(table_name, column_str, filters)
+            
+            result["data"] = rows[:max_rows] if rows else []
+            result["row_count"] = len(result["data"])
             result["success"] = True
             
-            return result
-            
-        except psycopg2.Error as e:
-            result["error"] = f"Database error: {str(e)}"
             return result
         except Exception as e:
             result["error"] = f"Execution error: {str(e)}"
             return result
-        finally:
-            cursor.close()
-            conn.close()
     
     def get_table_sample(
         self,
