@@ -1,0 +1,24 @@
+{
+  "conversation_id": "3",
+  "created_at": "2025-11-01T06:38:10.103132",
+  "turns": [
+    {
+      "timestamp": "2025-11-01T06:38:10.103147",
+      "turn_number": 1
+    }
+  ],
+  "layers": {
+    "layer1": {
+      "events": []
+    },
+    "layer2": {
+      "events": []
+    },
+    "layer3": {
+      "events": []
+    },
+    "layer4": {
+      "events": []
+    }
+  }
+}
